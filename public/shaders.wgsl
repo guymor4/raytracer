@@ -1,0 +1,281 @@
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+// Vertex shader for a fullscreen quad
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>(-1.0,  1.0)
+    );
+    
+    var uv = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 0.0)
+    );
+    
+    var output: VertexOutput;
+    output.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+    output.uv = uv[vertexIndex];
+    return output;
+}
+
+struct Ray {
+    origin: vec3<f32>,
+    direction: vec3<f32>,
+}
+
+struct Sphere {
+    center: vec3<f32>,
+    radius: f32,
+    color: vec3<f32>,
+    padding: f32,
+}
+
+struct Plane {
+    position: vec3<f32>,
+    normal: vec3<f32>,
+    color: vec3<f32>,
+}
+
+struct Camera {
+    position: vec3<f32>,
+    rotation: vec3<f32>,
+    fov: f32,
+    nearPlane: f32,
+    farPlane: f32,
+    padding: f32,
+}
+
+struct HitInfo {
+    t: f32,
+    color: vec3<f32>,
+    normal: vec3<f32>,
+}
+
+@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
+@group(0) @binding(2) var<storage, read> planes: array<Plane>;
+
+const PI: f32 = 3.14159265358979323846;
+
+fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
+    let oc = ray.origin - sphere.center;
+    let a = dot(ray.direction, ray.direction);
+    let b = 2.0 * dot(oc, ray.direction);
+    let c = dot(oc, oc) - sphere.radius * sphere.radius;
+    let discriminant = b * b - 4.0 * a * c;
+    
+    if (discriminant < 0.0) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>());
+    }
+    
+    let t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+    let t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+    
+    if (t1 > 0.0001) {
+        let hit_point = ray.origin + ray.direction * t1;
+        let normal = normalize(hit_point - sphere.center);
+        return HitInfo(t1, sphere.color, normal);
+    } else if (t2 > 0.0001) {
+        let hit_point = ray.origin + ray.direction * t2;
+        let normal = normalize(hit_point - sphere.center);
+        return HitInfo(t2, sphere.color, normal);
+    }
+    
+    return HitInfo(-1.0, vec3<f32>(), vec3<f32>());
+}
+
+// Calculates intersection of a ray with a plane
+fn ray_plane_intersect(ray: Ray, plane: Plane) -> HitInfo {
+    let denom = dot(plane.normal, ray.direction);
+    if (abs(denom) < 0.0001) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>()); // Ray is parallel to the plane
+    }
+
+    let t = dot(plane.position - ray.origin, plane.normal) / denom;
+    var hit_point = ray.origin + ray.direction * t;
+
+    // Simple checkerboard pattern for planes
+   let checker_size = 1.0;
+   let checker_x = floor(hit_point.x / checker_size);
+   let checker_z = floor(hit_point.z / checker_size);
+
+   var hit_color: vec3<f32>;
+   if (abs((checker_x + checker_z) % 2.0) < 0.5) {
+       hit_color = plane.color;
+   } else {
+       hit_color = plane.color * 0.5;
+   }
+
+    return HitInfo(
+        t,
+        hit_color,
+        plane.normal
+    );
+}
+
+fn rand_u(state: ptr<function, u32>) -> u32 {
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+fn rand_f(state: ptr<function, u32>) -> f32 {
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return f32((word >> 22u) ^ word) * bitcast<f32>(0x2f800004u);
+}
+
+fn sample_cosine_hemisphere(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
+    // Generate two uniform random numbers
+    let r1 = rand_f(state);
+    let r2 = rand_f(state);
+
+    // Cosine-weighted hemisphere sampling in tangent space
+    let phi = 2.0 * PI * r1;
+    let cos_theta = sqrt(r2);
+    let sin_theta = sqrt(1.0 - r2);
+
+    let local_dir = vec3<f32>(
+        cos(phi) * sin_theta,
+        cos_theta,
+        sin(phi) * sin_theta
+    );
+
+    // Build an orthonormal basis around the normal
+    let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(normal.y) > 0.99);
+    let tangent = normalize(cross(up, normal));
+    let bitangent = cross(normal, tangent);
+
+    // Transform from local (tangent space) to world space
+    return normalize(
+        tangent * local_dir.x +
+        normal  * local_dir.y +
+        bitangent * local_dir.z
+    );
+}
+
+fn ray_all(ray: Ray) -> HitInfo {
+   var closest_hit = HitInfo(-1, vec3<f32>(), vec3<f32>());
+
+   // Check sphere intersections
+   for (var i = 0u; i < arrayLength(&spheres); i++) {
+       let hit_info = ray_sphere_intersect(ray, spheres[i]);
+       if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
+           closest_hit = hit_info;
+       }
+   }
+
+   // Check plane intersections
+   for (var i = 0u; i < arrayLength(&planes); i++) {
+       let hit_info = ray_plane_intersect(ray, planes[i]);
+       if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
+           closest_hit = hit_info;
+       }
+   }
+
+    return HitInfo(
+        closest_hit.t,
+        closest_hit.color,
+        closest_hit.normal
+    );
+}
+
+fn ray_trace(ray: Ray, depth: u32, state: ptr<function, u32>) -> vec3<f32> {
+    var sky_color = vec3<f32>(0.3, 0.3, 0.6); // Sky color
+
+    var color: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+
+    var current_ray = ray;
+    for (var i = 0u; i < depth; i++) {
+        var hit_info = ray_all(current_ray);
+        if (hit_info.t < 0.0) {
+            return color;
+        }
+
+        color *= hit_info.color; // Accumulate color from hits
+
+        // Simple diffuse reflection
+        let new_direction = sample_cosine_hemisphere(hit_info.normal, state);
+        let new_ray = Ray(hit_info.t * current_ray.direction + current_ray.origin, new_direction);
+        current_ray = new_ray;
+    }
+
+    return color;
+}
+
+fn to_radians(d: f32) -> f32 { return d * 3.1415926535 / 180.0; }
+
+fn rotate_yaw_pitch(v: vec3<f32>, yaw: f32, pitch: f32) -> vec3<f32> {
+    // Yaw around Y, then pitch around X. dir_world = R_y(yaw) * R_x(pitch) * v
+    let cy = cos(yaw);  let sy = sin(yaw);
+    let cx = cos(pitch);let sx = sin(pitch);
+
+    // R_y * R_x (combined 3x3)
+    let r0 = vec3<f32>( cy,      sy*sx,  sy*cx);
+    let r1 = vec3<f32>( 0.0,     cx,    -sx   );
+    let r2 = vec3<f32>(-sy,      cy*sx,  cy*cx);
+
+    // Multiply matrix by vector
+    return normalize(vec3<f32>(
+        dot(r0, v),
+        dot(r1, v),
+        dot(r2, v)
+    ));
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let resolution = vec2<f32>(1024.0, 768.0);
+    let aspect = resolution.x / resolution.y;
+    let coord = vec2<f32>(
+        (input.uv.x * 2.0 - 1.0) * aspect,
+        (1.0 - input.uv.y * 2.0)
+    );
+
+
+    // Simple rotation approach: yaw (Y) and pitch (X) only for now
+    let rotation_rad = camera.rotation * 3.14159 / 180.0;
+    let yaw = rotation_rad.y;
+    let pitch = rotation_rad.x;
+
+    // Calculate forward vector from yaw and pitch
+    let forward = rotate_yaw_pitch(vec3<f32>(0, 0, -1), yaw, pitch);
+
+    // Calculate right vector (perpendicular to forward and world up)
+    let world_up = vec3<f32>(0.0, 1.0, 0.0);
+    let right = normalize(cross(forward, world_up));
+    let up = cross(right, forward); // Calculate up vector
+
+    let fov = camera.fov * 3.14159 / 180.0;
+    let focal_length = 1.0 / tan(fov * 0.5);
+
+    let ray_dir = normalize(
+        right * coord.x +
+        up * coord.y +
+        forward * focal_length
+    );
+    let ray = Ray(camera.position, ray_dir);
+
+    // Initialize random state for sampling
+    var pixelCoordX = u32(input.uv.x * resolution.x);
+    var pixelCoordY = u32(input.uv.y * resolution.y);
+    var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX;
+
+    let depth: u32 = 2;
+
+    // Perform ray tracing
+    let color = ray_trace(ray, depth, &state);
+    return vec4<f32>(color, 1.0);
+}

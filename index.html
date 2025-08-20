@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Raytracer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 1px solid #333;
+            background: #111;
+        }
+        #error {
+            color: #ff4444;
+            margin-top: 24px;
+            padding: 10px;
+            background: #220000;
+            border-radius: 5px;
+            display: none;
+        }
+        #debug {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #333;
+            min-width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div id="debug">
+        <div>FPS: <span id="fps">0</span></div>
+    </div>
+    <canvas id="canvas" width="1024" height="768"></canvas>
+    <div id="error"></div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
