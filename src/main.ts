@@ -16,7 +16,7 @@ class WebGPURenderer {
   constructor() {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
-    
+
     if (!canvas) {
       throw new Error('Canvas element not found');
     }
@@ -71,8 +71,43 @@ class WebGPURenderer {
         code: shaderCode,
       });
 
+      // Check for shader compilation errors
+      shaderModule.getCompilationInfo().then(info => {
+        if (info.messages.length > 0) {
+          console.log('Shader compilation messages:');
+          for (const message of info.messages) {
+            console.log(`${message.type}: ${message.message} (line ${message.lineNum})`);
+          }
+        }
+      });
+
+      // Force pipeline recreation with explicit layout
+      const bindGroupLayout = this.device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'uniform' }
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'read-only-storage' }
+          },
+          {
+            binding: 2,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'read-only-storage' }
+          },
+        ],
+      });
+
+      const pipelineLayout = this.device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout],
+      });
+
       this.pipeline = this.device.createRenderPipeline({
-        layout: 'auto',
+        layout: pipelineLayout,
         vertex: {
           module: shaderModule,
           entryPoint: 'vs_main',
@@ -135,9 +170,9 @@ class WebGPURenderer {
     });
     this.device.queue.writeBuffer(this.cameraBuffer, 0, cameraData);
 
-    // Create spheres buffer
-    // Sphere struct: vec3 center + f32 radius + vec3 color + f32 padding = 32 bytes
-    const spheresSize = scene.spheres.length * 32;
+    // Create spheres buffer  
+    // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
+    const spheresSize = scene.spheres.length * 64;
     const spheresData = new Float32Array(spheresSize / 4);
     let offset = 0;
 
@@ -146,7 +181,6 @@ class WebGPURenderer {
       spheresData[offset++] = sphere.center[0];
       spheresData[offset++] = sphere.center[1];
       spheresData[offset++] = sphere.center[2];
-
       // radius: f32
       spheresData[offset++] = sphere.radius;
 
@@ -154,13 +188,25 @@ class WebGPURenderer {
       spheresData[offset++] = sphere.color[0];
       spheresData[offset++] = sphere.color[1];
       spheresData[offset++] = sphere.color[2];
+      // padding1: f32
+      spheresData[offset++] = 0.0;
 
-      // padding: f32
+      // emissionColor: vec3<f32>
+      spheresData[offset++] = sphere.emissionColor[0];
+      spheresData[offset++] = sphere.emissionColor[1];
+      spheresData[offset++] = sphere.emissionColor[2];
+      // emissionStrength: f32
+      spheresData[offset++] = sphere.emissionStrength;
+
+      // padding: vec4<f32> (16 bytes)
+      spheresData[offset++] = 0.0;
+      spheresData[offset++] = 0.0;
+      spheresData[offset++] = 0.0;
       spheresData[offset++] = 0.0;
     }
 
     this.spheresBuffer = this.device.createBuffer({
-      size: Math.max(spheresSize, 32),
+      size: Math.max(spheresSize, 64),
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
@@ -169,33 +215,44 @@ class WebGPURenderer {
     }
 
     // Create planes buffer
-    // Plane struct: vec3 position(16) + vec3 normal(16) + vec3 color(16) = 48 bytes
-    const planesSize = scene.planes.length * 48;
+    // Plane struct: vec3 position + f32 padding1 + vec3 normal + f32 padding2 + vec3 color + f32 padding3 + vec3 emissionColor + f32 emissionStrength = 80 bytes
+    const planesSize = scene.planes.length * 80;
     const planesData = new Float32Array(planesSize / 4);
     offset = 0;
 
     for (const plane of scene.planes) {
-      // position: vec3<f32> (16 bytes with padding)
+      // position: vec3<f32>
       planesData[offset++] = plane.position[0];
       planesData[offset++] = plane.position[1];
       planesData[offset++] = plane.position[2];
-      offset++; // padding after vec3
+      // padding1: f32
+      planesData[offset++] = 0.0;
 
-      // normal: vec3<f32> (16 bytes with padding)
+      // normal: vec3<f32>
       planesData[offset++] = plane.normal[0];
       planesData[offset++] = plane.normal[1];
       planesData[offset++] = plane.normal[2];
-      offset++; // padding after vec3
+      // padding2: f32
+      planesData[offset++] = 0.0;
 
-      // color: vec3<f32> (16 bytes with padding)
+      // color: vec3<f32>
       planesData[offset++] = plane.color[0];
       planesData[offset++] = plane.color[1];
       planesData[offset++] = plane.color[2];
-      offset++; // padding after vec3
+      // padding3: f32
+      planesData[offset++] = 0.0;
+
+      // emissionColor: vec3<f32>
+      planesData[offset++] = plane.emissionColor[0];
+      planesData[offset++] = plane.emissionColor[1];
+      planesData[offset++] = plane.emissionColor[2];
+
+      // emissionStrength: f32
+      planesData[offset++] = plane.emissionStrength;
     }
 
     this.planesBuffer = this.device.createBuffer({
-      size: Math.max(planesSize, 48),
+      size: Math.max(planesSize, 80),
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
@@ -204,9 +261,29 @@ class WebGPURenderer {
     }
 
 
-    // Create bind group
+    // Create bind group using explicit layout
+    const bindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform' }
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' }
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' }
+        },
+      ],
+    });
+
     this.bindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries: [
         {
           binding: 0,

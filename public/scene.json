@@ -8,31 +8,41 @@
   },
   "spheres": [
     {
-      "center": [-2.4, 1.1, 0.0],
+      "center": [-2.4, 1, 0.0],
       "radius": 1.0,
-      "color": [1.0, 0.3, 0.3]
+      "color": [1.0, 0.3, 0.3],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0
     },
     {
-      "center": [0.0, 1.1, 0.0],
+      "center": [0.0, 1, 0.0],
       "radius": 1.0,
-      "color": [0.3, 1.0, 0.3]
+      "color": [0.3, 1.0, 0.3],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0
     },
     {
-      "center": [2.4, 1.1, 0.0],
+      "center": [2.4, 1, 0.0],
       "radius": 1.0,
-      "color": [0.3, 0.3, 1.0]
+      "color": [0.3, 0.3, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0
     },
     {
-      "center": [0, 1.1, -4.0],
-      "radius": 3.0,
-      "color": [1.0, 1.0, 1.0]
+      "center": [3, 2.0, -8.0],
+      "radius": 4.0,
+      "color": [0, 0, 0],
+      "emissionColor": [1.0, 1.0, 1.0],
+      "emissionStrength": 4.0
     }
   ],
   "planes": [
     {
       "position": [0.0, 0.0, 0.0],
       "normal": [0.0, 1.0, 0.0],
-      "color": [0.8, 0.8, 0.8]
+      "color": [0.8, 0.8, 0.8],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0
     }
   ]
 }

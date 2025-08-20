@@ -38,14 +38,22 @@ struct Ray {
 struct Sphere {
     center: vec3<f32>,
     radius: f32,
-    color: vec3<f32>,
-    padding: f32,
+    color: vec3<f32>, 
+    padding1: f32,
+    emissionColor: vec3<f32>,
+    emissionStrength: f32,
+    padding: vec4<f32>, // 16 bytes padding to make total 64 bytes
 }
 
 struct Plane {
     position: vec3<f32>,
+    padding1: f32,
     normal: vec3<f32>,
+    padding2: f32,
     color: vec3<f32>,
+    padding3: f32,
+    emissionColor: vec3<f32>,
+    emissionStrength: f32,
 }
 
 struct Camera {
@@ -54,15 +62,16 @@ struct Camera {
     fov: f32,
     nearPlane: f32,
     farPlane: f32,
-    padding: f32,
 }
 
 struct HitInfo {
     t: f32,
     color: vec3<f32>,
     normal: vec3<f32>,
+    emission: vec3<f32>,
 }
 
+// Shader bindings
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> planes: array<Plane>;
@@ -75,60 +84,48 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     let b = 2.0 * dot(oc, ray.direction);
     let c = dot(oc, oc) - sphere.radius * sphere.radius;
     let discriminant = b * b - 4.0 * a * c;
-    
     if (discriminant < 0.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
+
+    let sqrt_discriminant = sqrt(discriminant);
     
-    let t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-    let t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+    let t1 = (-b - sqrt_discriminant) / (2.0 * a);
+    let t2 = (-b + sqrt_discriminant) / (2.0 * a);
     
     if (t1 > 0.0001) {
         let hit_point = ray.origin + ray.direction * t1;
         let normal = normalize(hit_point - sphere.center);
-        return HitInfo(t1, sphere.color, normal);
+        let emission = sphere.emissionColor * sphere.emissionStrength;
+        return HitInfo(t1, sphere.color, normal, emission);
     } else if (t2 > 0.0001) {
         let hit_point = ray.origin + ray.direction * t2;
         let normal = normalize(hit_point - sphere.center);
-        return HitInfo(t2, sphere.color, normal);
+        let emission = sphere.emissionColor * sphere.emissionStrength;
+        return HitInfo(t2, sphere.color, normal, emission);
     }
     
-    return HitInfo(-1.0, vec3<f32>(), vec3<f32>());
+    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
 }
 
 // Calculates intersection of a ray with a plane
 fn ray_plane_intersect(ray: Ray, plane: Plane) -> HitInfo {
     let denom = dot(plane.normal, ray.direction);
     if (abs(denom) < 0.0001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>()); // Ray is parallel to the plane
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>()); // Ray is parallel to the plane
     }
 
     let t = dot(plane.position - ray.origin, plane.normal) / denom;
     var hit_point = ray.origin + ray.direction * t;
 
-    // Simple checkerboard pattern for planes
-   let checker_size = 1.0;
-   let checker_x = floor(hit_point.x / checker_size);
-   let checker_z = floor(hit_point.z / checker_size);
-
-   var hit_color: vec3<f32>;
-   if (abs((checker_x + checker_z) % 2.0) < 0.5) {
-       hit_color = plane.color;
-   } else {
-       hit_color = plane.color * 0.5;
-   }
-
+    var hit_color: vec3<f32> = plane.color;
+    let emission = plane.emissionColor * plane.emissionStrength;
     return HitInfo(
         t,
         hit_color,
-        plane.normal
+        plane.normal,
+        emission
     );
-}
-
-fn rand_u(state: ptr<function, u32>) -> u32 {
-    *state = *state * 747796405u + 2891336453u;
-    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
-    return (word >> 22u) ^ word;
 }
 
 fn rand_f(state: ptr<function, u32>) -> f32 {
@@ -167,7 +164,7 @@ fn sample_cosine_hemisphere(normal: vec3<f32>, state: ptr<function, u32>) -> vec
 }
 
 fn ray_all(ray: Ray) -> HitInfo {
-   var closest_hit = HitInfo(-1, vec3<f32>(), vec3<f32>());
+   var closest_hit = HitInfo(-1, vec3<f32>(), vec3<f32>(), vec3<f32>());
 
    // Check sphere intersections
    for (var i = 0u; i < arrayLength(&spheres); i++) {
@@ -185,34 +182,39 @@ fn ray_all(ray: Ray) -> HitInfo {
        }
    }
 
-    return HitInfo(
-        closest_hit.t,
-        closest_hit.color,
-        closest_hit.normal
-    );
+    return closest_hit;
 }
 
-fn ray_trace(ray: Ray, depth: u32, state: ptr<function, u32>) -> vec3<f32> {
-    var sky_color = vec3<f32>(0.3, 0.3, 0.6); // Sky color
-
-    var color: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f32> {
+    var sky_color = vec3<f32>(1.0, 1.0, 1.0) * 0.4;
+    var color: vec3<f32> = vec3<f32>(1, 1, 1);
+    var light: vec3<f32> = vec3<f32>(0, 0, 0);
 
     var current_ray = ray;
-    for (var i = 0u; i < depth; i++) {
+    for (var i = 0u; i < maxBounceCount; i++) {
         var hit_info = ray_all(current_ray);
         if (hit_info.t < 0.0) {
-            return color;
+            // No hit, environment color and light
+            light += sky_color * color; // Sky color
+            break;
         }
 
-        color *= hit_info.color; // Accumulate color from hits
+        // Hit detected, accumulate light and color
+        light += hit_info.emission * color;
+        color *= hit_info.color;
+
+        if (color.x < 0.001 && color.y < 0.001 && color.z < 0.001) {
+            // If color is too dark, stop tracing
+            break;
+        }
 
         // Simple diffuse reflection
+        let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.001; // Offset to prevent self-intersection
         let new_direction = sample_cosine_hemisphere(hit_info.normal, state);
-        let new_ray = Ray(hit_info.t * current_ray.direction + current_ray.origin, new_direction);
-        current_ray = new_ray;
+        current_ray = Ray(new_origin, new_direction);
     }
 
-    return color;
+    return light;
 }
 
 fn to_radians(d: f32) -> f32 { return d * 3.1415926535 / 180.0; }
@@ -273,9 +275,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var pixelCoordY = u32(input.uv.y * resolution.y);
     var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX;
 
-    let depth: u32 = 2;
+    let maxBounceCount: u32 = 10;
+    let samples: u32 = 4;
 
-    // Perform ray tracing
-    let color = ray_trace(ray, depth, &state);
-    return vec4<f32>(color, 1.0);
+    var totalColor = vec3<f32>(0.0, 0.0, 0.0);
+    for (var i = 0u; i < samples; i++) {
+        totalColor += ray_trace(ray, maxBounceCount, &state);
+    }
+
+    return vec4<f32>(totalColor / f32(samples), 1.0);
 }

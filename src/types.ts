@@ -16,12 +16,16 @@ export interface Sphere {
   center: Vec3;
   radius: number;
   color: Vec3;
+  emissionColor: Vec3;
+  emissionStrength: number;
 }
 
 export interface Plane {
   position: Vec3;
   normal: Vec3;
   color: Vec3;
+  emissionColor: Vec3;
+  emissionStrength: number;
 }
 
 export interface Scene {
