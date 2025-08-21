@@ -383,6 +383,7 @@ class WebGPURenderer {
         }
     }
 
+    // TODO update only the frameIndex (camera data is static for now)
     private updateUniformsBuffer(): void {
         if (!this.device || !this.uniformsBuffer || !this.currentScene) return;
 

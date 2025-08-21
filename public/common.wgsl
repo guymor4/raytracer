@@ -136,13 +136,20 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     if (t1 > 0.01) {
         let hit_point = ray.origin + ray.direction * t1;
         let normal = normalize(hit_point - sphere.center);
-        let emission = sphere.emissionColor * sphere.emissionStrength;
-        return HitInfo(t1, sphere.color, normal, emission);
-    } else if (t2 > 0.01) {
+        // Ensure normal points towards ray origin (back-face culling)
+//        if (dot(normal, ray.direction) > 0.0) {
+            let emission = sphere.emissionColor * sphere.emissionStrength;
+            return HitInfo(t1, sphere.color, normal, emission);
+//        }
+    }
+
+    if (t2 > 0.01) {
         let hit_point = ray.origin + ray.direction * t2;
         let normal = normalize(hit_point - sphere.center);
-        let emission = sphere.emissionColor * sphere.emissionStrength;
-        return HitInfo(t2, sphere.color, normal, emission);
+        if (dot(normal, ray.direction) > 0.0) {
+            let emission = sphere.emissionColor * sphere.emissionStrength;
+            return HitInfo(t1, sphere.color, normal, emission);
+        }
     }
     
     return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
@@ -152,7 +159,7 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     // Möller-Trumbore algorithm for ray-triangle intersection
     let edge1 = tri.v1 - tri.v0;
     let edge2 = tri.v2 - tri.v0;
-    
+
     let h = cross(ray.direction, edge2);
     let a = dot(edge1, h);
     
@@ -160,11 +167,11 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     if (abs(a) < 0.0001) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-    
+
     let f = 1.0 / a;
     let s = ray.origin - tri.v0;
     let u = f * dot(s, h);
-    
+
     if (u < 0.0 || u > 1.0) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
@@ -182,11 +189,13 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
         // Calculate surface normal (counter-clockwise winding)
         let normal = normalize(cross(edge1, edge2));
         
-        // Ensure normal points towards ray origin (back-face culling)
-        let face_normal = select(normal, -normal, dot(normal, ray.direction) > 0.0);
+        // Back-face culling
+        if (dot(normal, ray.direction) < 0.0) {
+            return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        }
         
         let emission = tri.emissionColor * tri.emissionStrength;
-        return HitInfo(t, tri.color, face_normal, emission);
+        return HitInfo(t, tri.color, normal, emission);
     }
     
     return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
