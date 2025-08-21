@@ -159,33 +159,12 @@ class WebGPURenderer {
             throw error;
         }
 
-        // Create camera buffer
-        // Camera struct: vec3 position + vec3 rotation + f32 fov + f32 nearPlane + f32 farPlane + f32 frameIndex + padding = 48 bytes
-        const cameraData = new Float32Array(12);
-        let cameraOffset = 0;
-
-        // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
-        cameraData[cameraOffset++] = this.currentScene.camera.position[0];
-        cameraData[cameraOffset++] = this.currentScene.camera.position[1];
-        cameraData[cameraOffset++] = this.currentScene.camera.position[2];
-        cameraOffset++; // padding after vec3
-
-        // rotation: vec3<f32>
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[0];
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[1];
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[2];
-
-        // Camera.fov, Camera.nearPlane, Camera.farPlane, Camera.frameIndex: f32 each (16 bytes)
-        cameraData[cameraOffset++] = this.currentScene.camera.fov;
-        cameraData[cameraOffset++] = this.currentScene.camera.nearPlane;
-        cameraData[cameraOffset++] = this.currentScene.camera.farPlane;
-        cameraData[cameraOffset++] = this.frameCounter;
-
+        // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
-            size: 48,
+            size: 64,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        this.device.queue.writeBuffer(this.uniformsBuffer, 0, cameraData);
+        this.updateUniformsBuffer()
 
         // Create spheres buffer
         // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
@@ -322,30 +301,37 @@ class WebGPURenderer {
         }
     }
 
-    private updateCameraBuffer(): void {
+    private updateUniformsBuffer(): void {
         if (!this.device || !this.uniformsBuffer || !this.currentScene) return;
 
-        const cameraData = new Float32Array(12);
-        let cameraOffset = 0;
+        // Create uniforms buffer
+        // Uniforms struct: Camera + frameIndex
+        const uniformsData = new Float32Array(16);
+        let uniformsOffset = 0;
 
         // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
-        cameraData[cameraOffset++] = this.currentScene.camera.position[0];
-        cameraData[cameraOffset++] = this.currentScene.camera.position[1];
-        cameraData[cameraOffset++] = this.currentScene.camera.position[2];
-        cameraOffset++; // padding after vec3
+        uniformsData[uniformsOffset++] = this.currentScene.camera.position[0];
+        uniformsData[uniformsOffset++] = this.currentScene.camera.position[1];
+        uniformsData[uniformsOffset++] = this.currentScene.camera.position[2];
+        uniformsOffset++; // padding after vec3
 
-        // Camera.rotation: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[0];
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[1];
-        cameraData[cameraOffset++] = this.currentScene.camera.rotation[2];
+        // rotation: vec3<f32>
+        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[0];
+        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[1];
+        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[2];
 
-        // Camera.fov, Camera.nearPlane, Camera.farPlane, Camera.frameIndex: f32 each (16 bytes)
-        cameraData[cameraOffset++] = this.currentScene.camera.fov;
-        cameraData[cameraOffset++] = this.currentScene.camera.nearPlane;
-        cameraData[cameraOffset++] = this.currentScene.camera.farPlane;
-        cameraData[cameraOffset++] = this.frameCounter;
+        // Camera.fov, Camera.nearPlane, Camera.farPlane: f32 each
+        uniformsData[uniformsOffset++] = this.currentScene.camera.fov;
+        uniformsData[uniformsOffset++] = this.currentScene.camera.nearPlane;
+        uniformsData[uniformsOffset++] = this.currentScene.camera.farPlane;
+        uniformsOffset++; // padding after 3 f32
+        uniformsOffset++;
 
-        this.device.queue.writeBuffer(this.uniformsBuffer, 0, cameraData);
+        // frameIndex: f32
+        uniformsData[uniformsOffset++] = this.frameCounter;
+        // padding: vec3<f32> (12 bytes)
+
+        this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
     }
 
     private render(): void {
@@ -360,7 +346,7 @@ class WebGPURenderer {
 
         // Update camera buffer with current frame counter
         this.frameCounter++;
-        this.updateCameraBuffer();
+        this.updateUniformsBuffer();
 
         const textureView = this.context.getCurrentTexture().createView();
         const renderPassDescriptor: GPURenderPassDescriptor = {

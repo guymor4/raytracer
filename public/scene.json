@@ -1,7 +1,7 @@
 {
   "camera": {
-    "position": [-3.0, 4.0, 4.0],
-    "rotation": [-40, -30, 0],
+    "position": [-2, 4.0, 4.0],
+    "rotation": [-50, -30, 0],
     "fov": 60.0,
     "nearPlane": 0.1,
     "farPlane": 1000.0

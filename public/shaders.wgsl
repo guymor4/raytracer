@@ -56,12 +56,17 @@ struct Plane {
     emissionStrength: f32,
 }
 
+
 struct Camera {
     position: vec3<f32>,
     rotation: vec3<f32>,
     fov: f32,
     nearPlane: f32,
     farPlane: f32,
+}
+
+struct Uniforms {
+    camera: Camera,
     frameIndex: f32,
 }
 
@@ -73,7 +78,7 @@ struct HitInfo {
 }
 
 // Shader bindings
-@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> planes: array<Plane>;
 @group(0) @binding(3) var accumulationR: texture_storage_2d<r32float, read_write>;
@@ -266,7 +271,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
 
     // Simple rotation approach: yaw (Y) and pitch (X) only for now
-    let rotation_rad = camera.rotation * 3.14159 / 180.0;
+    let rotation_rad = uniforms.camera.rotation * 3.14159 / 180.0;
     let yaw = rotation_rad.y;
     let pitch = rotation_rad.x;
 
@@ -278,7 +283,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let right = normalize(cross(forward, world_up));
     let up = cross(right, forward); // Calculate up vector
 
-    let fov = camera.fov * 3.14159 / 180.0;
+    let fov = uniforms.camera.fov * 3.14159 / 180.0;
     let focal_length = 1.0 / tan(fov * 0.5);
 
     let ray_dir = normalize(
@@ -286,18 +291,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         up * coord.y +
         forward * focal_length
     );
-    let ray = Ray(camera.position, ray_dir);
+    let ray = Ray(uniforms.camera.position, ray_dir);
 
     // Calculate pixel coordinates in the accumulation texture clamped to the resolution
     let pixelCoordRaw = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
     let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(resolution.x - 1), i32(resolution.y - 1)));
 
     // Initialize random state for sampling
-    var seed: u32 = u32(pixelCoord.y) * u32(resolution.x) + u32(pixelCoord.x) + u32(camera.frameIndex) * 12345;
+    var seed: u32 = u32(pixelCoord.y) * u32(resolution.x) + u32(pixelCoord.x) + u32(uniforms.frameIndex) * 12345;
     var state: u32 = wang_hash(seed);
 
-    let maxBounceCount: u32 = 6;
-    let samples: u32 = 8; // Multiple samples per frame for good quality
+    let maxBounceCount: u32 = 6; // Maximum number of bounces for ray tracing
+    let samples: u32 = 8; // Number of samples per pixel
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < samples; i++) {
@@ -308,14 +313,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Read back from accumulation textures or initialize to zero
     var storedColor: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
     // skip the read on the first frame
-    if (camera.frameIndex > 0) {
+    if (uniforms.frameIndex > 0) {
         let storedR = textureLoad(accumulationR, pixelCoord).r;
         let storedG = textureLoad(accumulationG, pixelCoord).r;
         let storedB = textureLoad(accumulationB, pixelCoord).r;
         storedColor = vec3<f32>(storedR, storedG, storedB);
     }
 
-    let weight = 1.0 / f32(camera.frameIndex + 1);
+    let weight = 1.0 / f32(uniforms.frameIndex + 1);
     // Combine previous frame with current frame. Weight the contributions to result in an average over all frames.
     let accumulatedColor = saturate(storedColor * (1 - weight) + color * weight);
 
@@ -323,7 +328,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     textureStore(accumulationR, pixelCoord, vec4<f32>(accumulatedColor.r, 0.0, 0.0, 0.0));
     textureStore(accumulationG, pixelCoord, vec4<f32>(accumulatedColor.g, 0.0, 0.0, 0.0));
     textureStore(accumulationB, pixelCoord, vec4<f32>(accumulatedColor.b, 0.0, 0.0, 0.0));
-
-
     return vec4<f32>(accumulatedColor, 1.0);
 }
