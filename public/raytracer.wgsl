@@ -135,7 +135,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var state: u32 = wang_hash(seed);
 
     let maxBounceCount: u32 = 6; // Maximum number of bounces for ray tracing
-    let samples: u32 = 8; // Number of samples per pixel
+    let samples: u32 = 1; // Number of samples per pixel
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < samples; i++) {

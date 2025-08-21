@@ -157,12 +157,12 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
 
 fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     // Möller-Trumbore algorithm for ray-triangle intersection
-    let edge1 = tri.v1 - tri.v0;
-    let edge2 = tri.v2 - tri.v0;
+    let edge01 = tri.v1 - tri.v0;
+    let edge02 = tri.v2 - tri.v0;
 
-    let h = cross(ray.direction, edge2);
-    let a = dot(edge1, h);
-    
+    let h = cross(ray.direction, edge02);
+    let a = dot(edge01, h);
+
     // Ray is parallel to triangle
     if (abs(a) < 0.0001) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
@@ -171,32 +171,29 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let f = 1.0 / a;
     let s = ray.origin - tri.v0;
     let u = f * dot(s, h);
-
     if (u < 0.0 || u > 1.0) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-    
-    let q = cross(s, edge1);
+
+    let q = cross(s, edge01);
     let v = f * dot(ray.direction, q);
-    
     if (v < 0.0 || u + v > 1.0) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-    
-    let t = f * dot(edge2, q);
-    
-    if (t > 0.001) {
-        // Calculate surface normal (counter-clockwise winding)
-        let normal = normalize(cross(edge1, edge2));
-        
-        // Back-face culling
-        if (dot(normal, ray.direction) < 0.0) {
-            return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
-        }
-        
-        let emission = tri.emissionColor * tri.emissionStrength;
-        return HitInfo(t, tri.color, normal, emission);
+
+    let t = f * dot(edge02, q);
+    if (t < 0.001) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-    
-    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+
+    // Calculate surface normal (counter-clockwise winding)
+    let normal = normalize(cross(edge01, edge02));
+
+    // Back-face culling
+    if (dot(normal, ray.direction) < 0.0) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+    }
+
+    let emission = tri.emissionColor * tri.emissionStrength;
+    return HitInfo(t, tri.color, normal, emission);
 }
