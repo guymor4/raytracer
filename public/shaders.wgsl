@@ -97,12 +97,12 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     let t1 = (-b - sqrt_discriminant) / (2.0 * a);
     let t2 = (-b + sqrt_discriminant) / (2.0 * a);
     
-    if (t1 > 0.0001) {
+    if (t1 > 0.01) {
         let hit_point = ray.origin + ray.direction * t1;
         let normal = normalize(hit_point - sphere.center);
         let emission = sphere.emissionColor * sphere.emissionStrength;
         return HitInfo(t1, sphere.color, normal, emission);
-    } else if (t2 > 0.0001) {
+    } else if (t2 > 0.01) {
         let hit_point = ray.origin + ray.direction * t2;
         let normal = normalize(hit_point - sphere.center);
         let emission = sphere.emissionColor * sphere.emissionStrength;
@@ -115,11 +115,14 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
 // Calculates intersection of a ray with a plane
 fn ray_plane_intersect(ray: Ray, plane: Plane) -> HitInfo {
     let denom = dot(plane.normal, ray.direction);
-    if (abs(denom) < 0.0001) {
+    if (abs(denom) < 0.001) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>()); // Ray is parallel to the plane
     }
 
     let t = dot(plane.position - ray.origin, plane.normal) / denom;
+    if (t < 0.001) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>()); // Intersection behind the ray origin
+    }
     var hit_point = ray.origin + ray.direction * t;
 
     var hit_color: vec3<f32> = plane.color;
@@ -213,8 +216,10 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         }
 
         // Simple diffuse reflection
-        let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.001; // Offset to prevent self-intersection
-        let new_direction = sample_cosine_hemisphere(hit_info.normal, state);
+        let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.01; // Offset to prevent self-intersection
+        var hitNormal = hit_info.normal;
+        if (dot(hitNormal, current_ray.direction) > 0.0) { hitNormal = -hitNormal; }
+        let new_direction = sample_cosine_hemisphere(hitNormal, state);
         current_ray = Ray(new_origin, new_direction);
     }
 
@@ -239,6 +244,15 @@ fn rotate_yaw_pitch(v: vec3<f32>, yaw: f32, pitch: f32) -> vec3<f32> {
         dot(r1, v),
         dot(r2, v)
     ));
+}
+
+fn wang_hash(s: u32) -> u32 {
+    var ns = (s ^ 61u) ^ (s >> 16u);
+    ns = ns * 9u;
+    ns = ns ^ (ns >> 4u);
+    ns = ns * 0x27d4eb2du;
+    ns = ns ^ (ns >> 15u);
+    return ns;
 }
 
 @fragment
@@ -274,13 +288,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     );
     let ray = Ray(camera.position, ray_dir);
 
-    // Initialize random state for sampling
-    var pixelCoordX = u32(input.uv.x * resolution.x);
-    var pixelCoordY = u32(input.uv.y * resolution.y);
-    var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX + u32(camera.frameIndex * 12345.0);
+    // Calculate pixel coordinates in the accumulation texture clamped to the resolution
+    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
+    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(resolution.x - 1), i32(resolution.y - 1)));
 
-    let maxBounceCount: u32 = 30;
-    let samples: u32 = 4; // Multiple samples per frame for good quality
+    // Initialize random state for sampling
+    var seed: u32 = u32(pixelCoord.y) * u32(resolution.x) + u32(pixelCoord.x) + u32(camera.frameIndex) * 12345;
+    var state: u32 = wang_hash(seed);
+
+    let maxBounceCount: u32 = 6;
+    let samples: u32 = 8; // Multiple samples per frame for good quality
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < samples; i++) {
@@ -288,12 +305,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     var color = totalColor / f32(samples);
 
-    // Read back from accumulation textures as POC
-    let pixelCoord = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
-    let storedR = textureLoad(accumulationR, pixelCoord).r;
-    let storedG = textureLoad(accumulationG, pixelCoord).r;
-    let storedB = textureLoad(accumulationB, pixelCoord).r;
-    let storedColor = vec3<f32>(storedR, storedG, storedB);
+    // Read back from accumulation textures or initialize to zero
+    var storedColor: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
+    // skip the read on the first frame
+    if (camera.frameIndex > 0) {
+        let storedR = textureLoad(accumulationR, pixelCoord).r;
+        let storedG = textureLoad(accumulationG, pixelCoord).r;
+        let storedB = textureLoad(accumulationB, pixelCoord).r;
+        storedColor = vec3<f32>(storedR, storedG, storedB);
+    }
 
     let weight = 1.0 / f32(camera.frameIndex + 1);
     // Combine previous frame with current frame. Weight the contributions to result in an average over all frames.

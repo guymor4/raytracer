@@ -59,7 +59,7 @@ class WebGPURenderer {
 
       await this.createPipeline();
       this.createVertexBuffer();
-      this.createAccumulationTextures();
+      this.createTextures();
       try {
         await this.createSceneBuffer();
       } catch (error) {
@@ -92,48 +92,8 @@ class WebGPURenderer {
         }
       }
 
-      // Force pipeline recreation with explicit layout
-      const bindGroupLayout = this.device.createBindGroupLayout({
-        entries: [
-          {
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'uniform' }
-          },
-          {
-            binding: 1,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'read-only-storage' }
-          },
-          {
-            binding: 2,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'read-only-storage' }
-          },
-          {
-            binding: 3,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-          {
-            binding: 4,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-          {
-            binding: 5,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-        ],
-      });
-
-      const pipelineLayout = this.device.createPipelineLayout({
-        bindGroupLayouts: [bindGroupLayout],
-      });
-
       this.pipeline = this.device.createRenderPipeline({
-        layout: pipelineLayout,
+        layout: 'auto',
         vertex: {
           module: shaderModule,
           entryPoint: 'vs_main',
@@ -161,18 +121,19 @@ class WebGPURenderer {
     // Not needed for fullscreen quad raytracer - vertices are generated in shader
   }
 
-  private createAccumulationTextures(): void {
+  private createTextures(): void {
     if (!this.device) throw new Error('Device not initialized');
 
-    const textureConfig = {
+    // Create accumulation storage textures
+    const accumulationTextureConfig = {
       size: [1024, 768],
       format: 'r32float' as GPUTextureFormat,
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
     };
 
-    this.accumulationTextureR = this.device.createTexture(textureConfig);
-    this.accumulationTextureG = this.device.createTexture(textureConfig);
-    this.accumulationTextureB = this.device.createTexture(textureConfig);
+    this.accumulationTextureR = this.device.createTexture(accumulationTextureConfig);
+    this.accumulationTextureG = this.device.createTexture(accumulationTextureConfig);
+    this.accumulationTextureB = this.device.createTexture(accumulationTextureConfig);
   }
 
   private async createSceneBuffer(): Promise<void> {
@@ -190,24 +151,24 @@ class WebGPURenderer {
     // Create camera buffer
     // Camera struct: vec3 position + vec3 rotation + f32 fov + f32 nearPlane + f32 farPlane + f32 frameIndex + padding = 48 bytes  
     const cameraData = new Float32Array(12);
-    let camOffset = 0;
+    let cameraOffset = 0;
 
-    // position: vec3<f32>
-    cameraData[camOffset++] = this.currentScene.camera.position[0];
-    cameraData[camOffset++] = this.currentScene.camera.position[1];
-    cameraData[camOffset++] = this.currentScene.camera.position[2];
-    camOffset++; // padding after vec3
+    // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
+    cameraData[cameraOffset++] = this.currentScene.camera.position[0];
+    cameraData[cameraOffset++] = this.currentScene.camera.position[1];
+    cameraData[cameraOffset++] = this.currentScene.camera.position[2];
+    cameraOffset++; // padding after vec3
 
     // rotation: vec3<f32>
-    cameraData[camOffset++] = this.currentScene.camera.rotation[0];
-    cameraData[camOffset++] = this.currentScene.camera.rotation[1];
-    cameraData[camOffset++] = this.currentScene.camera.rotation[2];
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[0];
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[1];
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[2];
 
-    // fov, nearPlane, farPlane, frameIndex: f32 each
-    cameraData[camOffset++] = this.currentScene.camera.fov;
-    cameraData[camOffset++] = this.currentScene.camera.nearPlane;
-    cameraData[camOffset++] = this.currentScene.camera.farPlane;
-    cameraData[camOffset++] = this.frameCounter;
+    // Camera.fov, Camera.nearPlane, Camera.farPlane, Camera.frameIndex: f32 each (16 bytes)
+    cameraData[cameraOffset++] = this.currentScene.camera.fov;
+    cameraData[cameraOffset++] = this.currentScene.camera.nearPlane;
+    cameraData[cameraOffset++] = this.currentScene.camera.farPlane;
+    cameraData[cameraOffset++] = this.frameCounter;
 
     this.cameraBuffer = this.device.createBuffer({
       size: 48,
@@ -219,35 +180,35 @@ class WebGPURenderer {
     // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
     const spheresSize = this.currentScene.spheres.length * 64;
     const spheresData = new Float32Array(spheresSize / 4);
-    let offset = 0;
+    let spheresOffset = 0;
 
     for (const sphere of this.currentScene.spheres) {
       // center: vec3<f32>
-      spheresData[offset++] = sphere.center[0];
-      spheresData[offset++] = sphere.center[1];
-      spheresData[offset++] = sphere.center[2];
+      spheresData[spheresOffset++] = sphere.center[0];
+      spheresData[spheresOffset++] = sphere.center[1];
+      spheresData[spheresOffset++] = sphere.center[2];
       // radius: f32
-      spheresData[offset++] = sphere.radius;
+      spheresData[spheresOffset++] = sphere.radius;
 
       // color: vec3<f32>
-      spheresData[offset++] = sphere.color[0];
-      spheresData[offset++] = sphere.color[1];
-      spheresData[offset++] = sphere.color[2];
+      spheresData[spheresOffset++] = sphere.color[0];
+      spheresData[spheresOffset++] = sphere.color[1];
+      spheresData[spheresOffset++] = sphere.color[2];
       // padding1: f32
-      spheresData[offset++] = 0.0;
+      spheresData[spheresOffset++] = 0.0;
 
       // emissionColor: vec3<f32>
-      spheresData[offset++] = sphere.emissionColor[0];
-      spheresData[offset++] = sphere.emissionColor[1];
-      spheresData[offset++] = sphere.emissionColor[2];
+      spheresData[spheresOffset++] = sphere.emissionColor[0];
+      spheresData[spheresOffset++] = sphere.emissionColor[1];
+      spheresData[spheresOffset++] = sphere.emissionColor[2];
       // emissionStrength: f32
-      spheresData[offset++] = sphere.emissionStrength;
+      spheresData[spheresOffset++] = sphere.emissionStrength;
 
       // padding: vec4<f32> (16 bytes)
-      spheresData[offset++] = 0.0;
-      spheresData[offset++] = 0.0;
-      spheresData[offset++] = 0.0;
-      spheresData[offset++] = 0.0;
+      spheresData[spheresOffset++] = 0.0;
+      spheresData[spheresOffset++] = 0.0;
+      spheresData[spheresOffset++] = 0.0;
+      spheresData[spheresOffset++] = 0.0;
     }
 
     this.spheresBuffer = this.device.createBuffer({
@@ -263,42 +224,42 @@ class WebGPURenderer {
     // Plane struct: vec3 position + f32 padding1 + vec3 normal + f32 padding2 + vec3 color + f32 padding3 + vec3 emissionColor + f32 emissionStrength = 80 bytes
     const planesSize = this.currentScene.planes.length * 80;
     const planesData = new Float32Array(planesSize / 4);
-    offset = 0;
+    let planesOffset = 0;
 
     for (const plane of this.currentScene.planes) {
       // position: vec3<f32>
-      planesData[offset++] = plane.position[0];
-      planesData[offset++] = plane.position[1];
-      planesData[offset++] = plane.position[2];
+      planesData[planesOffset++] = plane.position[0];
+      planesData[planesOffset++] = plane.position[1];
+      planesData[planesOffset++] = plane.position[2];
       // padding1: f32
-      planesData[offset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
 
       // normal: vec3<f32>
-      planesData[offset++] = plane.normal[0];
-      planesData[offset++] = plane.normal[1];
-      planesData[offset++] = plane.normal[2];
+      planesData[planesOffset++] = plane.normal[0];
+      planesData[planesOffset++] = plane.normal[1];
+      planesData[planesOffset++] = plane.normal[2];
       // padding2: f32
-      planesData[offset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
 
       // color: vec3<f32>
-      planesData[offset++] = plane.color[0];
-      planesData[offset++] = plane.color[1];
-      planesData[offset++] = plane.color[2];
+      planesData[planesOffset++] = plane.color[0];
+      planesData[planesOffset++] = plane.color[1];
+      planesData[planesOffset++] = plane.color[2];
       // padding3: f32
-      planesData[offset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
 
       // emissionColor: vec3<f32>
-      planesData[offset++] = plane.emissionColor[0];
-      planesData[offset++] = plane.emissionColor[1];
-      planesData[offset++] = plane.emissionColor[2];
+      planesData[planesOffset++] = plane.emissionColor[0];
+      planesData[planesOffset++] = plane.emissionColor[1];
+      planesData[planesOffset++] = plane.emissionColor[2];
 
       // emissionStrength: f32
-      planesData[offset++] = plane.emissionStrength;
+      planesData[planesOffset++] = plane.emissionStrength;
 
       // padding: vec3<f32>
-      planesData[offset++] = 0.0;
-      planesData[offset++] = 0.0;
-      planesData[offset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
+      planesData[planesOffset++] = 0.0;
     }
 
     this.planesBuffer = this.device.createBuffer({
@@ -311,44 +272,9 @@ class WebGPURenderer {
     }
 
     try {
-      // Create bind group using explicit layout
-      const bindGroupLayout = this.device.createBindGroupLayout({
-        entries: [
-          {
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'uniform' }
-          },
-          {
-            binding: 1,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'read-only-storage' }
-          },
-          {
-            binding: 2,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: 'read-only-storage' }
-          },
-          {
-            binding: 3,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-          {
-            binding: 4,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-          {
-            binding: 5,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: 'read-write', format: 'r32float' }
-          },
-        ],
-      });
-
+      // Create bind group using pipeline's layout
       this.bindGroup = this.device.createBindGroup({
-        layout: bindGroupLayout,
+        layout: this.pipeline!.getBindGroupLayout(0),
         entries: [
           {
             binding: 0,
@@ -387,24 +313,24 @@ class WebGPURenderer {
     if (!this.device || !this.cameraBuffer || !this.currentScene) return;
 
     const cameraData = new Float32Array(12);
-    let camOffset = 0;
+    let cameraOffset = 0;
 
-    // position: vec3<f32>
-    cameraData[camOffset++] = this.currentScene.camera.position[0];
-    cameraData[camOffset++] = this.currentScene.camera.position[1];
-    cameraData[camOffset++] = this.currentScene.camera.position[2];
-    camOffset++; // padding after vec3
+    // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
+    cameraData[cameraOffset++] = this.currentScene.camera.position[0];
+    cameraData[cameraOffset++] = this.currentScene.camera.position[1];
+    cameraData[cameraOffset++] = this.currentScene.camera.position[2];
+    cameraOffset++; // padding after vec3
 
-    // rotation: vec3<f32>  
-    cameraData[camOffset++] = this.currentScene.camera.rotation[0];
-    cameraData[camOffset++] = this.currentScene.camera.rotation[1];
-    cameraData[camOffset++] = this.currentScene.camera.rotation[2];
+    // Camera.rotation: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[0];
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[1];
+    cameraData[cameraOffset++] = this.currentScene.camera.rotation[2];
 
-    // fov, nearPlane, farPlane, frameIndex: f32 each 
-    cameraData[camOffset++] = this.currentScene.camera.fov;
-    cameraData[camOffset++] = this.currentScene.camera.nearPlane;
-    cameraData[camOffset++] = this.currentScene.camera.farPlane;
-    cameraData[camOffset++] = this.frameCounter;
+    // Camera.fov, Camera.nearPlane, Camera.farPlane, Camera.frameIndex: f32 each (16 bytes)
+    cameraData[cameraOffset++] = this.currentScene.camera.fov;
+    cameraData[cameraOffset++] = this.currentScene.camera.nearPlane;
+    cameraData[cameraOffset++] = this.currentScene.camera.farPlane;
+    cameraData[cameraOffset++] = this.frameCounter;
 
     this.device.queue.writeBuffer(this.cameraBuffer, 0, cameraData);
   }
@@ -414,14 +340,11 @@ class WebGPURenderer {
       return;
     }
 
-    this.frameCounter++;
-    
     // Update camera buffer with current frame counter
+    this.frameCounter++;
     this.updateCameraBuffer();
 
-    const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();
-
     const renderPassDescriptor: GPURenderPassDescriptor = {
       colorAttachments: [
         {
@@ -433,6 +356,7 @@ class WebGPURenderer {
       ],
     };
 
+    const commandEncoder = this.device.createCommandEncoder();
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.pipeline);
     passEncoder.setBindGroup(0, this.bindGroup);
