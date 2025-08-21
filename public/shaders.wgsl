@@ -76,6 +76,9 @@ struct HitInfo {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> planes: array<Plane>;
+@group(0) @binding(3) var accumulationR: texture_storage_2d<r32float, read_write>;
+@group(0) @binding(4) var accumulationG: texture_storage_2d<r32float, read_write>;
+@group(0) @binding(5) var accumulationB: texture_storage_2d<r32float, read_write>;
 
 const PI: f32 = 3.14159265358979323846;
 
@@ -276,14 +279,31 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var pixelCoordY = u32(input.uv.y * resolution.y);
     var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX + u32(camera.frameIndex * 12345.0);
 
-    let maxBounceCount: u32 = 10;
+    let maxBounceCount: u32 = 30;
     let samples: u32 = 4; // Multiple samples per frame for good quality
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < samples; i++) {
-        // Add sample index to random state for variation
         totalColor += ray_trace(ray, maxBounceCount, &state);
     }
+    var color = totalColor / f32(samples);
 
-    return vec4<f32>(totalColor / f32(samples), 1.0);
+    // Read back from accumulation textures as POC
+    let pixelCoord = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
+    let storedR = textureLoad(accumulationR, pixelCoord).r;
+    let storedG = textureLoad(accumulationG, pixelCoord).r;
+    let storedB = textureLoad(accumulationB, pixelCoord).r;
+    let storedColor = vec3<f32>(storedR, storedG, storedB);
+
+    let weight = 1.0 / f32(camera.frameIndex + 1);
+    // Combine previous frame with current frame. Weight the contributions to result in an average over all frames.
+    let accumulatedColor = saturate(storedColor * (1 - weight) + color * weight);
+
+    // Write to accumulation textures
+    textureStore(accumulationR, pixelCoord, vec4<f32>(accumulatedColor.r, 0.0, 0.0, 0.0));
+    textureStore(accumulationG, pixelCoord, vec4<f32>(accumulatedColor.g, 0.0, 0.0, 0.0));
+    textureStore(accumulationB, pixelCoord, vec4<f32>(accumulatedColor.b, 0.0, 0.0, 0.0));
+
+
+    return vec4<f32>(accumulatedColor, 1.0);
 }

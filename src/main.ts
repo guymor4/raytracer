@@ -12,7 +12,9 @@ class WebGPURenderer {
   private planesBuffer: GPUBuffer | null = null;
   private cameraBuffer: GPUBuffer | null = null;
   private bindGroup: GPUBindGroup | null = null;
-  private accumulationTexture: GPUTexture | null = null;
+  private accumulationTextureR: GPUTexture | null = null;
+  private accumulationTextureG: GPUTexture | null = null;
+  private accumulationTextureB: GPUTexture | null = null;
   private frameCounter = 0;
   private currentScene: Scene | null = null;
 
@@ -57,6 +59,7 @@ class WebGPURenderer {
 
       await this.createPipeline();
       this.createVertexBuffer();
+      this.createAccumulationTextures();
       try {
         await this.createSceneBuffer();
       } catch (error) {
@@ -107,6 +110,21 @@ class WebGPURenderer {
             visibility: GPUShaderStage.FRAGMENT,
             buffer: { type: 'read-only-storage' }
           },
+          {
+            binding: 3,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
+          {
+            binding: 4,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
+          {
+            binding: 5,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
         ],
       });
 
@@ -143,14 +161,18 @@ class WebGPURenderer {
     // Not needed for fullscreen quad raytracer - vertices are generated in shader
   }
 
-  private createAccumulationTexture(): void {
+  private createAccumulationTextures(): void {
     if (!this.device) throw new Error('Device not initialized');
 
-    this.accumulationTexture = this.device.createTexture({
+    const textureConfig = {
       size: [1024, 768],
-      format: 'r32float',
+      format: 'r32float' as GPUTextureFormat,
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
-    });
+    };
+
+    this.accumulationTextureR = this.device.createTexture(textureConfig);
+    this.accumulationTextureG = this.device.createTexture(textureConfig);
+    this.accumulationTextureB = this.device.createTexture(textureConfig);
   }
 
   private async createSceneBuffer(): Promise<void> {
@@ -307,6 +329,21 @@ class WebGPURenderer {
             visibility: GPUShaderStage.FRAGMENT,
             buffer: { type: 'read-only-storage' }
           },
+          {
+            binding: 3,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
+          {
+            binding: 4,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
+          {
+            binding: 5,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: { access: 'read-write', format: 'r32float' }
+          },
         ],
       });
 
@@ -324,6 +361,18 @@ class WebGPURenderer {
           {
             binding: 2,
             resource: { buffer: this.planesBuffer },
+          },
+          {
+            binding: 3,
+            resource: this.accumulationTextureR!.createView(),
+          },
+          {
+            binding: 4,
+            resource: this.accumulationTextureG!.createView(),
+          },
+          {
+            binding: 5,
+            resource: this.accumulationTextureB!.createView(),
           },
         ],
       });
