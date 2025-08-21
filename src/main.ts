@@ -10,7 +10,7 @@ class WebGPURenderer {
     private lastTime = performance.now();
     private fpsElement: HTMLElement;
     private spheresBuffer: GPUBuffer | null = null;
-    private planesBuffer: GPUBuffer | null = null;
+    private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
     private raytracerBindGroup: GPUBindGroup | null = null;
     private accumulatorBindGroup: GPUBindGroup | null = null;
@@ -271,55 +271,57 @@ class WebGPURenderer {
             this.device.queue.writeBuffer(this.spheresBuffer, 0, spheresData);
         }
 
-        // Create planes buffer
-        // Plane struct: vec3 position + f32 padding1 + vec3 normal + f32 padding2 + vec3 color + f32 padding3 + vec3 emissionColor + f32 emissionStrength = 80 bytes
-        const planesSize = this.currentScene.planes.length * 80;
-        const planesData = new Float32Array(planesSize / 4);
-        let planesOffset = 0;
+        // Create triangles buffer
+        // Triangle struct: vec3 v0 + padding1 + vec3 v1 + padding2 + vec3 v2 + padding3 + vec3 color + padding4 + vec3 emissionColor + emissionStrength + vec2 padding = 80 bytes
+        const trianglesSize = this.currentScene.triangles.length * 80;
+        const trianglesData = new Float32Array(trianglesSize / 4);
+        let trianglesOffset = 0;
 
-        for (const plane of this.currentScene.planes) {
-            // position: vec3<f32>
-            planesData[planesOffset++] = plane.position[0];
-            planesData[planesOffset++] = plane.position[1];
-            planesData[planesOffset++] = plane.position[2];
+        for (const triangle of this.currentScene.triangles) {
+            // v0: vec3<f32>
+            trianglesData[trianglesOffset++] = triangle.v0[0];
+            trianglesData[trianglesOffset++] = triangle.v0[1];
+            trianglesData[trianglesOffset++] = triangle.v0[2];
             // padding1: f32
-            planesData[planesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = 0.0;
 
-            // normal: vec3<f32>
-            planesData[planesOffset++] = plane.normal[0];
-            planesData[planesOffset++] = plane.normal[1];
-            planesData[planesOffset++] = plane.normal[2];
+            // v1: vec3<f32>
+            trianglesData[trianglesOffset++] = triangle.v1[0];
+            trianglesData[trianglesOffset++] = triangle.v1[1];
+            trianglesData[trianglesOffset++] = triangle.v1[2];
             // padding2: f32
-            planesData[planesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = 0.0;
+
+            // v2: vec3<f32>
+            trianglesData[trianglesOffset++] = triangle.v2[0];
+            trianglesData[trianglesOffset++] = triangle.v2[1];
+            trianglesData[trianglesOffset++] = triangle.v2[2];
+            // padding3: f32
+            trianglesData[trianglesOffset++] = 0.0;
 
             // color: vec3<f32>
-            planesData[planesOffset++] = plane.color[0];
-            planesData[planesOffset++] = plane.color[1];
-            planesData[planesOffset++] = plane.color[2];
-            // padding3: f32
-            planesData[planesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = triangle.color[0];
+            trianglesData[trianglesOffset++] = triangle.color[1];
+            trianglesData[trianglesOffset++] = triangle.color[2];
+            // padding4: f32
+            trianglesData[trianglesOffset++] = 0.0;
 
             // emissionColor: vec3<f32>
-            planesData[planesOffset++] = plane.emissionColor[0];
-            planesData[planesOffset++] = plane.emissionColor[1];
-            planesData[planesOffset++] = plane.emissionColor[2];
+            trianglesData[trianglesOffset++] = triangle.emissionColor[0];
+            trianglesData[trianglesOffset++] = triangle.emissionColor[1];
+            trianglesData[trianglesOffset++] = triangle.emissionColor[2];
 
             // emissionStrength: f32
-            planesData[planesOffset++] = plane.emissionStrength;
-
-            // padding: vec3<f32>
-            planesData[planesOffset++] = 0.0;
-            planesData[planesOffset++] = 0.0;
-            planesData[planesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = triangle.emissionStrength;
         }
 
-        this.planesBuffer = this.device.createBuffer({
-            size: Math.max(planesSize, 80),
+        this.trianglesBuffer = this.device.createBuffer({
+            size: trianglesSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        if (planesSize > 0) {
-            this.device.queue.writeBuffer(this.planesBuffer, 0, planesData);
+        if (trianglesSize > 0) {
+            this.device.queue.writeBuffer(this.trianglesBuffer, 0, trianglesData);
         }
 
         try {
@@ -337,7 +339,7 @@ class WebGPURenderer {
                     },
                     {
                         binding: 2,
-                        resource: { buffer: this.planesBuffer },
+                        resource: { buffer: this.trianglesBuffer },
                     },
                 ],
             });

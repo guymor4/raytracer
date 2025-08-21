@@ -25,9 +25,10 @@ export interface Sphere {
     emissionStrength: number;
 }
 
-export interface Plane {
-    position: Vec3;
-    normal: Vec3;
+export interface Triangle {
+    v0: Vec3;
+    v1: Vec3;
+    v2: Vec3;
     color: Vec3;
     emissionColor: Vec3;
     emissionStrength: number;
@@ -36,5 +37,5 @@ export interface Plane {
 export interface Scene {
     camera: Camera;
     spheres: Sphere[];
-    planes: Plane[];
+    triangles: Triangle[];
 }

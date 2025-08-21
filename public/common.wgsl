@@ -19,13 +19,11 @@ struct Sphere {
     padding: vec4<f32>, // 16 bytes padding to make total 64 bytes
 }
 
-struct Plane {
-    position: vec3<f32>,
-    padding1: f32,
-    normal: vec3<f32>,
-    padding2: f32,
+struct Triangle {
+    v0: vec3<f32>,
+    v1: vec3<f32>,
+    v2: vec3<f32>,
     color: vec3<f32>,
-    padding3: f32,
     emissionColor: vec3<f32>,
     emissionStrength: f32,
 }
@@ -150,24 +148,46 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
 }
 
-fn ray_plane_intersect(ray: Ray, plane: Plane) -> HitInfo {
-    let denom = dot(plane.normal, ray.direction);
-    if (abs(denom) < 0.001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>()); // Ray is parallel to the plane
+fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
+    // Möller-Trumbore algorithm for ray-triangle intersection
+    let edge1 = tri.v1 - tri.v0;
+    let edge2 = tri.v2 - tri.v0;
+    
+    let h = cross(ray.direction, edge2);
+    let a = dot(edge1, h);
+    
+    // Ray is parallel to triangle
+    if (abs(a) < 0.0001) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-
-    let t = dot(plane.position - ray.origin, plane.normal) / denom;
-    if (t < 0.001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>()); // Intersection behind the ray origin
+    
+    let f = 1.0 / a;
+    let s = ray.origin - tri.v0;
+    let u = f * dot(s, h);
+    
+    if (u < 0.0 || u > 1.0) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
     }
-    var hit_point = ray.origin + ray.direction * t;
-
-    var hit_color: vec3<f32> = plane.color;
-    let emission = plane.emissionColor * plane.emissionStrength;
-    return HitInfo(
-        t,
-        hit_color,
-        plane.normal,
-        emission
-    );
+    
+    let q = cross(s, edge1);
+    let v = f * dot(ray.direction, q);
+    
+    if (v < 0.0 || u + v > 1.0) {
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+    }
+    
+    let t = f * dot(edge2, q);
+    
+    if (t > 0.001) {
+        // Calculate surface normal (counter-clockwise winding)
+        let normal = normalize(cross(edge1, edge2));
+        
+        // Ensure normal points towards ray origin (back-face culling)
+        let face_normal = select(normal, -normal, dot(normal, ray.direction) > 0.0);
+        
+        let emission = tri.emissionColor * tri.emissionStrength;
+        return HitInfo(t, tri.color, face_normal, emission);
+    }
+    
+    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
 }

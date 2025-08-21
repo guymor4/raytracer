@@ -36,7 +36,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 // Raytracer bindings - only geometry data, no accumulation textures
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
-@group(0) @binding(2) var<storage, read> planes: array<Plane>;
+@group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 
 fn ray_all(ray: Ray) -> HitInfo {
    var closest_hit = HitInfo(-1, vec3<f32>(), vec3<f32>(), vec3<f32>());
@@ -49,9 +49,9 @@ fn ray_all(ray: Ray) -> HitInfo {
        }
    }
 
-   // Check plane intersections
-   for (var i = 0u; i < arrayLength(&planes); i++) {
-       let hit_info = ray_plane_intersect(ray, planes[i]);
+   // Check triangle intersections
+   for (var i = 0u; i < arrayLength(&triangles); i++) {
+       let hit_info = ray_triangle_intersect(ray, triangles[i]);
        if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
            closest_hit = hit_info;
        }
