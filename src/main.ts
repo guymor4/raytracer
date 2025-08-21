@@ -12,6 +12,9 @@ class WebGPURenderer {
   private planesBuffer: GPUBuffer | null = null;
   private cameraBuffer: GPUBuffer | null = null;
   private bindGroup: GPUBindGroup | null = null;
+  private accumulationTexture: GPUTexture | null = null;
+  private frameCounter = 0;
+  private currentScene: Scene | null = null;
 
   constructor() {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -54,7 +57,13 @@ class WebGPURenderer {
 
       await this.createPipeline();
       this.createVertexBuffer();
-      await this.createSceneBuffer();
+      try {
+        await this.createSceneBuffer();
+      } catch (error) {
+        console.error('createSceneBuffer failed:', error);
+        this.showError('Failed to create scene buffer: ' + (error as Error).message);
+        return;
+      }
       this.startRenderLoop();
     } catch (error) {
       this.showError((error as Error).message);
@@ -72,14 +81,13 @@ class WebGPURenderer {
       });
 
       // Check for shader compilation errors
-      shaderModule.getCompilationInfo().then(info => {
-        if (info.messages.length > 0) {
-          console.log('Shader compilation messages:');
-          for (const message of info.messages) {
-            console.log(`${message.type}: ${message.message} (line ${message.lineNum})`);
-          }
+      const info = await shaderModule.getCompilationInfo();
+      if (info.messages.length > 0) {
+        console.log('Shader compilation messages:');
+        for (const message of info.messages) {
+          console.log(`${message.type}: ${message.message} (line ${message.lineNum})`);
         }
-      });
+      }
 
       // Force pipeline recreation with explicit layout
       const bindGroupLayout = this.device.createBindGroupLayout({
@@ -135,34 +143,49 @@ class WebGPURenderer {
     // Not needed for fullscreen quad raytracer - vertices are generated in shader
   }
 
+  private createAccumulationTexture(): void {
+    if (!this.device) throw new Error('Device not initialized');
+
+    this.accumulationTexture = this.device.createTexture({
+      size: [1024, 768],
+      format: 'r32float',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+    });
+  }
+
   private async createSceneBuffer(): Promise<void> {
     if (!this.device) throw new Error('Device not initialized');
     if (!this.pipeline) throw new Error('Pipeline not initialized');
 
-    const scene: Scene = await fetch('scene.json').then((r) => r.json());
+    try {
+      const scene: Scene = await fetch('scene.json').then((r) => r.json());
+      this.currentScene = scene;
+    } catch (error) {
+      console.error('Failed to load scene.json:', error);
+      throw error;
+    }
 
     // Create camera buffer
-    // Camera struct: vec3 position + vec3 rotation + f32 fov + f32 nearPlane + f32 farPlane + padding = 48 bytes
+    // Camera struct: vec3 position + vec3 rotation + f32 fov + f32 nearPlane + f32 farPlane + f32 frameIndex + padding = 48 bytes  
     const cameraData = new Float32Array(12);
     let camOffset = 0;
 
     // position: vec3<f32>
-    cameraData[camOffset++] = scene.camera.position[0];
-    cameraData[camOffset++] = scene.camera.position[1];
-    cameraData[camOffset++] = scene.camera.position[2];
+    cameraData[camOffset++] = this.currentScene.camera.position[0];
+    cameraData[camOffset++] = this.currentScene.camera.position[1];
+    cameraData[camOffset++] = this.currentScene.camera.position[2];
     camOffset++; // padding after vec3
 
     // rotation: vec3<f32>
-    cameraData[camOffset++] = scene.camera.rotation[0];
-    cameraData[camOffset++] = scene.camera.rotation[1];
-    cameraData[camOffset++] = scene.camera.rotation[2];
+    cameraData[camOffset++] = this.currentScene.camera.rotation[0];
+    cameraData[camOffset++] = this.currentScene.camera.rotation[1];
+    cameraData[camOffset++] = this.currentScene.camera.rotation[2];
 
-    // fov, nearPlane, farPlane: f32 each
-    cameraData[camOffset++] = scene.camera.fov;
-    cameraData[camOffset++] = scene.camera.nearPlane;
-    cameraData[camOffset++] = scene.camera.farPlane;
-    camOffset++; // padding
-    camOffset++; // padding
+    // fov, nearPlane, farPlane, frameIndex: f32 each
+    cameraData[camOffset++] = this.currentScene.camera.fov;
+    cameraData[camOffset++] = this.currentScene.camera.nearPlane;
+    cameraData[camOffset++] = this.currentScene.camera.farPlane;
+    cameraData[camOffset++] = this.frameCounter;
 
     this.cameraBuffer = this.device.createBuffer({
       size: 48,
@@ -170,13 +193,13 @@ class WebGPURenderer {
     });
     this.device.queue.writeBuffer(this.cameraBuffer, 0, cameraData);
 
-    // Create spheres buffer  
+    // Create spheres buffer
     // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
-    const spheresSize = scene.spheres.length * 64;
+    const spheresSize = this.currentScene.spheres.length * 64;
     const spheresData = new Float32Array(spheresSize / 4);
     let offset = 0;
 
-    for (const sphere of scene.spheres) {
+    for (const sphere of this.currentScene.spheres) {
       // center: vec3<f32>
       spheresData[offset++] = sphere.center[0];
       spheresData[offset++] = sphere.center[1];
@@ -216,11 +239,11 @@ class WebGPURenderer {
 
     // Create planes buffer
     // Plane struct: vec3 position + f32 padding1 + vec3 normal + f32 padding2 + vec3 color + f32 padding3 + vec3 emissionColor + f32 emissionStrength = 80 bytes
-    const planesSize = scene.planes.length * 80;
+    const planesSize = this.currentScene.planes.length * 80;
     const planesData = new Float32Array(planesSize / 4);
     offset = 0;
 
-    for (const plane of scene.planes) {
+    for (const plane of this.currentScene.planes) {
       // position: vec3<f32>
       planesData[offset++] = plane.position[0];
       planesData[offset++] = plane.position[1];
@@ -249,6 +272,11 @@ class WebGPURenderer {
 
       // emissionStrength: f32
       planesData[offset++] = plane.emissionStrength;
+
+      // padding: vec3<f32>
+      planesData[offset++] = 0.0;
+      planesData[offset++] = 0.0;
+      planesData[offset++] = 0.0;
     }
 
     this.planesBuffer = this.device.createBuffer({
@@ -260,51 +288,87 @@ class WebGPURenderer {
       this.device.queue.writeBuffer(this.planesBuffer, 0, planesData);
     }
 
+    try {
+      // Create bind group using explicit layout
+      const bindGroupLayout = this.device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'uniform' }
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'read-only-storage' }
+          },
+          {
+            binding: 2,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: 'read-only-storage' }
+          },
+        ],
+      });
 
-    // Create bind group using explicit layout
-    const bindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform' }
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.FRAGMENT,
-          buffer: { type: 'read-only-storage' }
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.FRAGMENT,
-          buffer: { type: 'read-only-storage' }
-        },
-      ],
-    });
+      this.bindGroup = this.device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: { buffer: this.cameraBuffer },
+          },
+          {
+            binding: 1,
+            resource: { buffer: this.spheresBuffer },
+          },
+          {
+            binding: 2,
+            resource: { buffer: this.planesBuffer },
+          },
+        ],
+      });
+    } catch (error) {
+      console.error('Failed to create bind group:', error);
+      this.showError('Bind group creation failed: ' + (error as Error).message);
+      return;
+    }
+  }
 
-    this.bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.cameraBuffer },
-        },
-        {
-          binding: 1,
-          resource: { buffer: this.spheresBuffer },
-        },
-        {
-          binding: 2,
-          resource: { buffer: this.planesBuffer },
-        },
-      ],
-    });
+  private updateCameraBuffer(): void {
+    if (!this.device || !this.cameraBuffer || !this.currentScene) return;
+
+    const cameraData = new Float32Array(12);
+    let camOffset = 0;
+
+    // position: vec3<f32>
+    cameraData[camOffset++] = this.currentScene.camera.position[0];
+    cameraData[camOffset++] = this.currentScene.camera.position[1];
+    cameraData[camOffset++] = this.currentScene.camera.position[2];
+    camOffset++; // padding after vec3
+
+    // rotation: vec3<f32>  
+    cameraData[camOffset++] = this.currentScene.camera.rotation[0];
+    cameraData[camOffset++] = this.currentScene.camera.rotation[1];
+    cameraData[camOffset++] = this.currentScene.camera.rotation[2];
+
+    // fov, nearPlane, farPlane, frameIndex: f32 each 
+    cameraData[camOffset++] = this.currentScene.camera.fov;
+    cameraData[camOffset++] = this.currentScene.camera.nearPlane;
+    cameraData[camOffset++] = this.currentScene.camera.farPlane;
+    cameraData[camOffset++] = this.frameCounter;
+
+    this.device.queue.writeBuffer(this.cameraBuffer, 0, cameraData);
   }
 
   private render(): void {
     if (!this.device || !this.context || !this.pipeline || !this.bindGroup) {
       return;
     }
+
+    this.frameCounter++;
+    
+    // Update camera buffer with current frame counter
+    this.updateCameraBuffer();
 
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();

@@ -62,6 +62,7 @@ struct Camera {
     fov: f32,
     nearPlane: f32,
     farPlane: f32,
+    frameIndex: f32,
 }
 
 struct HitInfo {
@@ -273,13 +274,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Initialize random state for sampling
     var pixelCoordX = u32(input.uv.x * resolution.x);
     var pixelCoordY = u32(input.uv.y * resolution.y);
-    var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX;
+    var state: u32 = pixelCoordY * u32(resolution.x) + pixelCoordX + u32(camera.frameIndex * 12345.0);
 
     let maxBounceCount: u32 = 10;
-    let samples: u32 = 4;
+    let samples: u32 = 4; // Multiple samples per frame for good quality
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < samples; i++) {
+        // Add sample index to random state for variation
         totalColor += ray_trace(ray, maxBounceCount, &state);
     }
 
