@@ -1,4 +1,5 @@
-// common.wgsl is included separately and concatenated here
+// Pure raytracing shader - outputs raw raytraced color to intermediate texture
+// common.wgsl is included separately and concatenated
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -32,13 +33,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
-// Shader bindings
+// Raytracer bindings - only geometry data, no accumulation textures
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> planes: array<Plane>;
-@group(0) @binding(3) var accumulationR: texture_storage_2d<r32float, read_write>;
-@group(0) @binding(4) var accumulationG: texture_storage_2d<r32float, read_write>;
-@group(0) @binding(5) var accumulationB: texture_storage_2d<r32float, read_write>;
 
 fn ray_all(ray: Ray) -> HitInfo {
    var closest_hit = HitInfo(-1, vec3<f32>(), vec3<f32>(), vec3<f32>());
@@ -128,7 +126,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     );
     let ray = Ray(uniforms.camera.position, ray_dir);
 
-    // Calculate pixel coordinates in the accumulation texture clamped to the resolution
+    // Calculate pixel coordinates for random seeding
     let pixelCoordRaw = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
     let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(resolution.x - 1), i32(resolution.y - 1)));
 
@@ -143,25 +141,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     for (var i = 0u; i < samples; i++) {
         totalColor += ray_trace(ray, maxBounceCount, &state);
     }
-    var color = totalColor / f32(samples);
+    let color = totalColor / f32(samples);
 
-    // Read back from accumulation textures or initialize to zero
-    var storedColor: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
-    // skip the read on the first frame
-    if (uniforms.frameIndex > 0) {
-        let storedR = textureLoad(accumulationR, pixelCoord).r;
-        let storedG = textureLoad(accumulationG, pixelCoord).r;
-        let storedB = textureLoad(accumulationB, pixelCoord).r;
-        storedColor = vec3<f32>(storedR, storedG, storedB);
-    }
-
-    let weight = 1.0 / f32(uniforms.frameIndex + 1);
-    // Combine previous frame with current frame. Weight the contributions to result in an average over all frames.
-    let accumulatedColor = saturate(storedColor * (1 - weight) + color * weight);
-
-    // Write to accumulation textures
-    textureStore(accumulationR, pixelCoord, vec4<f32>(accumulatedColor.r, 0.0, 0.0, 0.0));
-    textureStore(accumulationG, pixelCoord, vec4<f32>(accumulatedColor.g, 0.0, 0.0, 0.0));
-    textureStore(accumulationB, pixelCoord, vec4<f32>(accumulatedColor.b, 0.0, 0.0, 0.0));
-    return vec4<f32>(accumulatedColor, 1.0);
+    // Output raw raytraced color (no accumulation)
+    return vec4<f32>(color, 1.0);
 }
