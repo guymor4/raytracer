@@ -77,11 +77,17 @@ class WebGPURenderer {
     private async createPipeline(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
 
-        const shaderCode = await fetch('shaders.wgsl').then((r) => r.text());
+        const [commonCode, shaderCode] = await Promise.all([
+            fetch('common.wgsl').then((r) => r.text()),
+            fetch('shaders.wgsl').then((r) => r.text())
+        ]);
+
+        // Combine common utilities with main shader
+        const fullShaderCode = commonCode + '\n' + shaderCode;
 
         try {
             const shaderModule = this.device.createShaderModule({
-                code: shaderCode,
+                code: fullShaderCode,
             });
 
             // Check for shader compilation errors
