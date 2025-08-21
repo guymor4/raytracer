@@ -245,8 +245,8 @@ class WebGPURenderer {
             spheresData[spheresOffset++] = sphere.color[0];
             spheresData[spheresOffset++] = sphere.color[1];
             spheresData[spheresOffset++] = sphere.color[2];
-            // padding1: f32
-            spheresData[spheresOffset++] = 0.0;
+            // smoothness: f32
+            spheresData[spheresOffset++] = sphere.smoothness;
 
             // emissionColor: vec3<f32>
             spheresData[spheresOffset++] = sphere.emissionColor[0];
@@ -254,12 +254,6 @@ class WebGPURenderer {
             spheresData[spheresOffset++] = sphere.emissionColor[2];
             // emissionStrength: f32
             spheresData[spheresOffset++] = sphere.emissionStrength;
-
-            // padding: vec4<f32> (16 bytes)
-            spheresData[spheresOffset++] = 0.0;
-            spheresData[spheresOffset++] = 0.0;
-            spheresData[spheresOffset++] = 0.0;
-            spheresData[spheresOffset++] = 0.0;
         }
 
         this.spheresBuffer = this.device.createBuffer({
@@ -272,8 +266,8 @@ class WebGPURenderer {
         }
 
         // Create triangles buffer
-        // Triangle struct: vec3 v0 + padding1 + vec3 v1 + padding2 + vec3 v2 + padding3 + vec3 color + padding4 + vec3 emissionColor + emissionStrength + vec2 padding = 80 bytes
-        const trianglesSize = this.currentScene.triangles.length * 80;
+        // Triangle struct: vec3 v0 + padding1 + vec3 v1 + padding2 + vec3 v2 + padding3 + vec3 color + padding4 + vec3 emissionColor + emissionStrength + smoothness + padding = 88 bytes
+        const trianglesSize = this.currentScene.triangles.length * 88;
         const trianglesData = new Float32Array(trianglesSize / 4);
         let trianglesOffset = 0;
 
@@ -313,6 +307,13 @@ class WebGPURenderer {
 
             // emissionStrength: f32
             trianglesData[trianglesOffset++] = triangle.emissionStrength;
+            
+            // smoothness: f32
+            trianglesData[trianglesOffset++] = triangle.smoothness;
+            // padding: f32
+            trianglesData[trianglesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = 0.0;
+            trianglesData[trianglesOffset++] = 0.0;
         }
 
         this.trianglesBuffer = this.device.createBuffer({

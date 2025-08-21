@@ -11,6 +11,7 @@
       "center": [-1.0, 1.01, -3.0],
       "radius": 1.0,
       "color": [0.9, 0.9, 0.9],
+      "smoothness": 1.0,
       "emissionColor": [0.0, 0.0, 0.0],
       "emissionStrength": 0.0
     },
@@ -18,13 +19,15 @@
       "center": [1.2, 0.71, -1.5],
       "radius": 0.7,
       "color": [0.2, 0.2, 1.0],
+      "smoothness": 1.0,
       "emissionColor": [0.0, 0.0, 0.0],
       "emissionStrength": 0.0
     },
     {
-      "center": [-1.2, 0.71, -1.0],
+      "center": [-1.2, 0.71, -1.5],
       "radius": 0.7,
       "color": [0.2, 1.0, 0.8],
+      "smoothness": 1.0,
       "emissionColor": [0.0, 0.0, 0.0],
       "emissionStrength": 0.0
     }
@@ -36,7 +39,8 @@
       "v2": [-2.5, 0.0, 0.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [2.5, 0.0, -5.0],
@@ -44,7 +48,8 @@
       "v2": [-2.5, 0.0, 0.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [-2.5, 5.0, 0.0],
@@ -52,7 +57,8 @@
       "v2": [-2.5, 5.0, -5.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [2.5, 5.0, 0.0],
@@ -60,7 +66,8 @@
       "v2": [-2.5, 5.0, -5.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [-2.5, 0.0, -5.0],
@@ -68,7 +75,8 @@
       "v2": [2.5, 0.0, -5.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [-2.5, 5.0, -5.0],
@@ -76,7 +84,8 @@
       "v2": [2.5, 0.0, -5.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [-2.5, 0.0, 0.0],
@@ -84,7 +93,8 @@
       "v2": [-2.5, 0.0, -5.0],
       "color": [0.9, 0.2, 0.2],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 1
     },
     {
       "v0": [-2.5, 5.0, 0.0],
@@ -92,7 +102,8 @@
       "v2": [-2.5, 0.0, -5.0],
       "color": [0.9, 0.2, 0.2],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 1
     },
     {
       "v0": [2.5, 0.0, -5.0],
@@ -100,7 +111,8 @@
       "v2": [2.5, 0.0, 0.0],
       "color": [0.2, 0.9, 0.2],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 1
     },
     {
       "v0": [2.5, 5.0, -5.0],
@@ -108,7 +120,8 @@
       "v2": [2.5, 0.0, 0.0],
       "color": [0.2, 0.9, 0.2],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 1
     },
     {
       "v0": [-1, 4.99, -3.4],
@@ -116,7 +129,8 @@
       "v2": [-1, 4.99, -1.8],
       "color": [1.0, 1.0, 1.0],
       "emissionColor": [1.0, 1.0, 1.0],
-      "emissionStrength": 8.0
+      "emissionStrength": 8.0,
+      "smoothness": 0
     },
     {
       "v0": [1, 4.99, -3.4],
@@ -124,7 +138,8 @@
       "v2": [-1, 4.99, -1.8],
       "color": [1.0, 1.0, 1.0],
       "emissionColor": [1.0, 1.0, 1.0],
-      "emissionStrength": 8.0
+      "emissionStrength": 8.0,
+      "smoothness": 0
     },
     {
       "v0": [-2.5, 0.0, 0.0],
@@ -132,7 +147,8 @@
       "v2": [-2.5, 5.0, 0.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     },
     {
       "v0": [2.5, 0.0, 0.0],
@@ -140,7 +156,8 @@
       "v2": [-2.5, 5.0, 0.0],
       "color": [0.9, 0.9, 0.9],
       "emissionColor": [0.0, 0.0, 0.0],
-      "emissionStrength": 0.0
+      "emissionStrength": 0.0,
+      "smoothness": 0
     }
   ]
 }

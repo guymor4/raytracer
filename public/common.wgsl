@@ -13,10 +13,9 @@ struct Sphere {
     center: vec3<f32>,
     radius: f32,
     color: vec3<f32>, 
-    padding1: f32,
+    smoothness: f32,
     emissionColor: vec3<f32>,
     emissionStrength: f32,
-    padding: vec4<f32>, // 16 bytes padding to make total 64 bytes
 }
 
 struct Triangle {
@@ -26,6 +25,7 @@ struct Triangle {
     color: vec3<f32>,
     emissionColor: vec3<f32>,
     emissionStrength: f32,
+    smoothness: f32,
 }
 
 struct Camera {
@@ -46,6 +46,7 @@ struct HitInfo {
     color: vec3<f32>,
     normal: vec3<f32>,
     emission: vec3<f32>,
+    smoothness: f32,
 }
 
 // Random number generation
@@ -125,7 +126,7 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     let c = dot(oc, oc) - sphere.radius * sphere.radius;
     let discriminant = b * b - 4.0 * a * c;
     if (discriminant < 0.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let sqrt_discriminant = sqrt(discriminant);
@@ -139,7 +140,7 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
         // Ensure normal points towards ray origin (back-face culling)
 //        if (dot(normal, ray.direction) > 0.0) {
             let emission = sphere.emissionColor * sphere.emissionStrength;
-            return HitInfo(t1, sphere.color, normal, emission);
+            return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
 //        }
     }
 
@@ -148,11 +149,11 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
         let normal = normalize(hit_point - sphere.center);
         if (dot(normal, ray.direction) > 0.0) {
             let emission = sphere.emissionColor * sphere.emissionStrength;
-            return HitInfo(t1, sphere.color, normal, emission);
+            return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
         }
     }
     
-    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
 }
 
 fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
@@ -165,25 +166,25 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
 
     // Ray is parallel to triangle
     if (abs(a) < 0.0001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let f = 1.0 / a;
     let s = ray.origin - tri.v0;
     let u = f * dot(s, h);
     if (u < 0.0 || u > 1.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let q = cross(s, edge01);
     let v = f * dot(ray.direction, q);
     if (v < 0.0 || u + v > 1.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let t = f * dot(edge02, q);
     if (t < 0.001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     // Calculate surface normal (counter-clockwise winding)
@@ -191,9 +192,9 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
 
     // Back-face culling
     if (dot(normal, ray.direction) < 0.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>());
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let emission = tri.emissionColor * tri.emissionStrength;
-    return HitInfo(t, tri.color, normal, emission);
+    return HitInfo(t, tri.color, normal, emission, tri.smoothness);
 }

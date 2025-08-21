@@ -21,6 +21,7 @@ export interface Sphere {
     center: Vec3;
     radius: number;
     color: Vec3;
+    smoothness: number;
     emissionColor: Vec3;
     emissionStrength: number;
 }
@@ -32,6 +33,7 @@ export interface Triangle {
     color: Vec3;
     emissionColor: Vec3;
     emissionStrength: number;
+    smoothness: number;
 }
 
 export interface Scene {
