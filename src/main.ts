@@ -6,6 +6,7 @@ class WebGPURenderer {
     private device: GPUDevice | null = null;
     private raytracerPipeline: GPURenderPipeline | null = null;
     private accumulatorPipeline: GPURenderPipeline | null = null;
+    private resolution: { width: number, height: number};
     private frameCount = 0;
     private lastTime = performance.now();
     private fpsElement: HTMLElement;
@@ -22,22 +23,16 @@ class WebGPURenderer {
     private frameCounter = 0;
     private currentScene: Scene | null = null;
 
-    constructor() {
-        const canvas = document.getElementById('canvas') as HTMLCanvasElement;
-        const fpsElement = document.getElementById('fps');
-
-        if (!canvas) {
-            throw new Error('Canvas element not found');
-        }
-        if (!fpsElement) {
-            throw new Error('FPS element not found');
-        }
+    private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
+        this.resolution = { width: canvas.width, height: canvas.height };
 
         this.canvas = canvas;
         this.fpsElement = fpsElement;
     }
 
-    async init(): Promise<void> {
+    static async Create(canvas: HTMLCanvasElement, fpsElement: HTMLElement): Promise<void> {
+        const renderer = new WebGPURenderer(canvas, fpsElement);
+
         try {
             if (!navigator.gpu) {
                 throw new Error('WebGPU not supported in this browser');
@@ -48,33 +43,33 @@ class WebGPURenderer {
                 throw new Error('No appropriate GPUAdapter found');
             }
 
-            this.device = await adapter.requestDevice();
-            this.context = this.canvas.getContext('webgpu');
+            renderer.device = await adapter.requestDevice();
+            renderer.context = renderer.canvas.getContext('webgpu');
 
-            if (!this.context) {
+            if (!renderer.context) {
                 throw new Error('Failed to get WebGPU context');
             }
 
             const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
-            this.context.configure({
-                device: this.device,
+            renderer.context.configure({
+                device: renderer.device,
                 format: canvasFormat,
             });
 
             try {
-                await this.createPipelines();
-                this.createTextures();
-                await this.createSceneBuffer();
+                await renderer.createPipelines();
+                renderer.createTextures();
+                await renderer.createSceneBuffer();
             } catch (error) {
                 console.error('createSceneBuffer failed:', error);
-                this.showError(
+                renderer.showError(
                     'Failed to create scene buffer: ' + (error as Error).message
                 );
                 return;
             }
-            this.startRenderLoop();
+            renderer.startRenderLoop();
         } catch (error) {
-            this.showError((error as Error).message);
+            renderer.showError((error as Error).message);
         }
     }
 
@@ -174,14 +169,14 @@ class WebGPURenderer {
 
         // Create intermediate texture for raytracer output
         this.intermediateTexture = this.device.createTexture({
-            size: [1024, 768],
+            size: [this.resolution.width, this.resolution.height],
             format: 'rgba16float',
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
 
         // Create accumulation storage textures
         const accumulationTextureConfig = {
-            size: [1024, 768],
+            size: [this.resolution.width, this.resolution.height],
             format: 'r32float' as GPUTextureFormat,
             usage:
                 GPUTextureUsage.STORAGE_BINDING |
@@ -222,7 +217,7 @@ class WebGPURenderer {
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
-            size: 64,
+            size: 72,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         this.updateUniformsBuffer()
@@ -389,8 +384,8 @@ class WebGPURenderer {
         if (!this.device || !this.uniformsBuffer || !this.currentScene) return;
 
         // Create uniforms buffer
-        // Uniforms struct: Camera + frameIndex
-        const uniformsData = new Float32Array(16);
+        // Uniforms struct: Camera + frameIndex + resolution
+        const uniformsData = new Float32Array(18);
         let uniformsOffset = 0;
 
         // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
@@ -411,9 +406,12 @@ class WebGPURenderer {
         uniformsOffset++; // padding after 3 f32
         uniformsOffset++;
 
-        // frameIndex: f32
+        // frameIndex, resolution width, resolution height: f32
         uniformsData[uniformsOffset++] = this.frameCounter;
-        // padding: vec3<f32> (12 bytes)
+        uniformsOffset++;
+        uniformsData[uniformsOffset++] = this.resolution.width;
+        uniformsData[uniformsOffset++] = this.resolution.height;
+        // padding: f32 (4 bytes)
 
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
     }
@@ -501,5 +499,18 @@ class WebGPURenderer {
     }
 }
 
-const renderer = new WebGPURenderer();
-renderer.init();
+
+function main(): void {
+    const canvas = document.getElementById('canvas') as HTMLCanvasElement;
+    const fpsElement = document.getElementById('fps');
+    if (!canvas) {
+        throw new Error('Canvas element not found');
+    }
+    if (!fpsElement) {
+        throw new Error('FPS element not found');
+    }
+
+    WebGPURenderer.Create(canvas, fpsElement)
+}
+window.addEventListener('load', main);
+

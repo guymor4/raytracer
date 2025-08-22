@@ -101,15 +101,14 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let resolution = vec2<f32>(1024.0, 768.0);
-    let aspect = resolution.x / resolution.y;
+    let aspect = uniforms.resolution.x / uniforms.resolution.y;
 
     // Calculate pixel coordinates for random seeding
-    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
-    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(resolution.x - 1), i32(resolution.y - 1)));
+    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * uniforms.resolution.x), i32(input.uv.y * uniforms.resolution.y));
+    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(uniforms.resolution.x - 1), i32(uniforms.resolution.y - 1)));
 
     // Initialize random state for sampling
-    var seed: u32 = u32(pixelCoord.y) * u32(resolution.x) + u32(pixelCoord.x) + u32(uniforms.frameIndex) * 12345;
+    var seed: u32 = u32(pixelCoord.y) * u32(uniforms.resolution.x) + u32(pixelCoord.x) + u32(uniforms.frameIndex) * 12345;
     var state: u32 = wang_hash(seed);
 
     // Simple rotation approach: yaw (Y) and pitch (X) only for now
@@ -128,8 +127,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let fov = uniforms.camera.fov * 3.14159 / 180.0;
     let focal_length = 1.0 / tan(fov * 0.5);
 
-    // Generate a random offset for anti aliasing
-    var offset = vec2<f32>(rand_f(&state) - 0.5, rand_f(&state) - 0.5) / resolution;
+    // Generate a random offset for anti aliasing (half pixel jitter)
+    var offset = vec2<f32>(rand_f(&state) - 0.5, rand_f(&state) - 0.5) / uniforms.resolution;
     let coord = vec2<f32>(
         ((input.uv.x + offset.x) * 2.0 - 1.0) * aspect,
         (1.0 - (input.uv.y + offset.y) * 2.0)

@@ -43,14 +43,12 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let resolution = vec2<f32>(1024.0, 768.0);
-    
     // Sample the current frame from raytracer output
     let currentFrameColor = textureSample(raytracerOutput, textureSampler, input.uv).rgb;
     
     // Calculate pixel coordinates in the accumulation texture clamped to the resolution
-    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * resolution.x), i32(input.uv.y * resolution.y));
-    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(resolution.x - 1), i32(resolution.y - 1)));
+    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * uniforms.resolution.x), i32(input.uv.y * uniforms.resolution.y));
+    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(uniforms.resolution.x - 1), i32(uniforms.resolution.y - 1)));
 
     // Read back from accumulation textures or initialize to zero
     var storedColor: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);

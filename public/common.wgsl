@@ -39,6 +39,7 @@ struct Camera {
 struct Uniforms {
     camera: Camera,
     frameIndex: f32,
+    resolution: vec2<f32>,
 }
 
 struct HitInfo {
