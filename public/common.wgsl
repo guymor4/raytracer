@@ -134,24 +134,20 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     
     let t1 = (-b - sqrt_discriminant) / (2.0 * a);
     let t2 = (-b + sqrt_discriminant) / (2.0 * a);
-    
+
+    let color = sphere.color;
+    let emission = sphere.emissionColor * sphere.emissionStrength;
+
     if (t1 > 0.01) {
         let hit_point = ray.origin + ray.direction * t1;
         let normal = normalize(hit_point - sphere.center);
-        // Ensure normal points towards ray origin (back-face culling)
-//        if (dot(normal, ray.direction) > 0.0) {
-            let emission = sphere.emissionColor * sphere.emissionStrength;
-            return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
-//        }
+        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
     }
 
     if (t2 > 0.01) {
         let hit_point = ray.origin + ray.direction * t2;
         let normal = normalize(hit_point - sphere.center);
-        if (dot(normal, ray.direction) > 0.0) {
-            let emission = sphere.emissionColor * sphere.emissionStrength;
-            return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
-        }
+        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
     }
     
     return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
