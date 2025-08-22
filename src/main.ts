@@ -1,4 +1,7 @@
 import { Scene } from './types.js';
+import * as Common from './common.js';
+import { FPSCounter } from './FPSCounter.js';
+import { RethrownError } from './common.js';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -6,10 +9,7 @@ class WebGPURenderer {
     private device: GPUDevice | null = null;
     private raytracerPipeline: GPURenderPipeline | null = null;
     private accumulatorPipeline: GPURenderPipeline | null = null;
-    private resolution: { width: number, height: number};
-    private frameCount = 0;
-    private lastTime = performance.now();
-    private fpsElement: HTMLElement;
+    private resolution: { width: number; height: number };
     private spheresBuffer: GPUBuffer | null = null;
     private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
@@ -20,17 +20,21 @@ class WebGPURenderer {
     private accumulationTextureG: GPUTexture | null = null;
     private accumulationTextureB: GPUTexture | null = null;
     private textureSampler: GPUSampler | null = null;
-    private frameCounter = 0;
+    private frameIndex = 0;
+    private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
 
         this.canvas = canvas;
-        this.fpsElement = fpsElement;
+        this.fpsCounter = new FPSCounter(fpsElement);
     }
 
-    static async Create(canvas: HTMLCanvasElement, fpsElement: HTMLElement): Promise<void> {
+    static async Create(
+        canvas: HTMLCanvasElement,
+        fpsElement: HTMLElement
+    ): Promise<WebGPURenderer | null> {
         const renderer = new WebGPURenderer(canvas, fpsElement);
 
         try {
@@ -45,7 +49,6 @@ class WebGPURenderer {
 
             renderer.device = await adapter.requestDevice();
             renderer.context = renderer.canvas.getContext('webgpu');
-
             if (!renderer.context) {
                 throw new Error('Failed to get WebGPU context');
             }
@@ -56,112 +59,42 @@ class WebGPURenderer {
                 format: canvasFormat,
             });
 
+            // Create GPU textures
+            renderer.createTextures();
+            if (!renderer.intermediateTexture) {
+                throw new Error('Intermediate texture not initialized');
+            }
+
+            // Create pipelines
             try {
-                await renderer.createPipelines();
-                renderer.createTextures();
-                await renderer.createSceneBuffer();
-            } catch (error) {
-                console.error('createSceneBuffer failed:', error);
-                renderer.showError(
-                    'Failed to create scene buffer: ' + (error as Error).message
+                const pipelines = await renderer.createPipelines(
+                    renderer.device,
+                    renderer.intermediateTexture
                 );
-                return;
+                renderer.raytracerPipeline = pipelines.raytracerPipeline;
+                renderer.accumulatorPipeline = pipelines.accumulatorPipeline;
+            } catch (error) {
+                throw new RethrownError(
+                    'Failed to create pipelines',
+                    error as Error
+                );
             }
-            renderer.startRenderLoop();
+
+            // Create scene buffers and bind groups
+            try {
+                await renderer.createBuffersAndBindGroups();
+            } catch (error) {
+                throw new RethrownError(
+                    'Failed to create scene buffer',
+                    error as Error
+                );
+            }
         } catch (error) {
-            renderer.showError((error as Error).message);
+            Common.showError((error as Error).message);
+            return null;
         }
-    }
 
-    private async createPipelines(): Promise<void> {
-        if (!this.device) throw new Error('Device not initialized');
-
-        const [commonCode, raytracerCode, accumulatorCode] = await Promise.all([
-            fetch('common.wgsl').then((r) => r.text()),
-            fetch('raytracer.wgsl').then((r) => r.text()),
-            fetch('accumulator.wgsl').then((r) => r.text())
-        ]);
-
-        // Combine common utilities with shaders
-        const fullRaytracerCode = commonCode + '\n' + raytracerCode;
-        const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
-
-        try {
-            const raytracerShaderModule = this.device.createShaderModule({
-                code: fullRaytracerCode,
-            });
-            const accumulatorShaderModule = this.device.createShaderModule({
-                code: fullAccumulatorCode,
-            });
-
-            // Check for shader compilation errors
-            let info = await raytracerShaderModule.getCompilationInfo();
-            if (info.messages.length > 0) {
-                console.log('Raytracer shader compilation messages:');
-                for (const message of info.messages) {
-                    console.log(
-                        `${message.type}: ${message.message} (line ${message.lineNum})`
-                    );
-                }
-            }
-
-            info = await accumulatorShaderModule.getCompilationInfo();
-            if (info.messages.length > 0) {
-                console.log('Accumulator shader compilation messages:');
-                for (const message of info.messages) {
-                    console.log(
-                        `${message.type}: ${message.message} (line ${message.lineNum})`
-                    );
-                }
-            }
-
-            // Create raytracer pipeline (renders to intermediate texture)
-            this.raytracerPipeline = this.device.createRenderPipeline({
-                layout: 'auto',
-                vertex: {
-                    module: raytracerShaderModule,
-                    entryPoint: 'vs_main',
-                },
-                fragment: {
-                    module: raytracerShaderModule,
-                    entryPoint: 'fs_main',
-                    targets: [
-                        {
-                            format: 'rgba16float', // Intermediate texture format
-                        },
-                    ],
-                },
-                primitive: {
-                    topology: 'triangle-list',
-                },
-            });
-
-            // Create accumulator pipeline (renders to canvas)
-            this.accumulatorPipeline = this.device.createRenderPipeline({
-                layout: 'auto',
-                vertex: {
-                    module: accumulatorShaderModule,
-                    entryPoint: 'vs_main',
-                },
-                fragment: {
-                    module: accumulatorShaderModule,
-                    entryPoint: 'fs_main',
-                    targets: [
-                        {
-                            format: navigator.gpu.getPreferredCanvasFormat(),
-                        },
-                    ],
-                },
-                primitive: {
-                    topology: 'triangle-list',
-                },
-            });
-        } catch (error) {
-            this.showError(
-                'Failed to create render pipelines: ' + (error as Error).message
-            );
-            throw error;
-        }
+        return renderer;
     }
 
     private createTextures(): void {
@@ -171,7 +104,9 @@ class WebGPURenderer {
         this.intermediateTexture = this.device.createTexture({
             size: [this.resolution.width, this.resolution.height],
             format: 'rgba16float',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage:
+                GPUTextureUsage.RENDER_ATTACHMENT |
+                GPUTextureUsage.TEXTURE_BINDING,
         });
 
         // Create accumulation storage textures
@@ -200,10 +135,105 @@ class WebGPURenderer {
         });
     }
 
-    private async createSceneBuffer(): Promise<void> {
+    private async createPipelines(
+        device: GPUDevice,
+        intermediateTexture: GPUTexture
+    ): Promise<{
+        raytracerPipeline: GPURenderPipeline;
+        accumulatorPipeline: GPURenderPipeline;
+    }> {
+        const [commonCode, raytracerCode, accumulatorCode] = await Promise.all([
+            fetch('common.wgsl').then((r) => r.text()),
+            fetch('raytracer.wgsl').then((r) => r.text()),
+            fetch('accumulator.wgsl').then((r) => r.text()),
+        ]);
+
+        // Combine common utilities with shaders
+        const fullRaytracerCode = commonCode + '\n' + raytracerCode;
+        const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
+
+        const raytracerShaderModule = device.createShaderModule({
+            code: fullRaytracerCode,
+        });
+        const accumulatorShaderModule = device.createShaderModule({
+            code: fullAccumulatorCode,
+        });
+
+        // Check for shader compilation errors
+        let info = await raytracerShaderModule.getCompilationInfo();
+        if (info.messages.length > 0) {
+            console.log('Raytracer shader compilation messages:');
+            for (const message of info.messages) {
+                console.log(
+                    `${message.type}: ${message.message} (line ${message.lineNum})`
+                );
+            }
+        }
+
+        info = await accumulatorShaderModule.getCompilationInfo();
+        if (info.messages.length > 0) {
+            console.log('Accumulator shader compilation messages:');
+            for (const message of info.messages) {
+                console.log(
+                    `${message.type}: ${message.message} (line ${message.lineNum})`
+                );
+            }
+        }
+
+        // Create raytracer pipeline (renders to intermediateTexture)
+        const raytracerPipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: {
+                module: raytracerShaderModule,
+                entryPoint: 'vs_main',
+            },
+            fragment: {
+                module: raytracerShaderModule,
+                entryPoint: 'fs_main',
+                targets: [
+                    {
+                        format: intermediateTexture.format,
+                    },
+                ],
+            },
+            primitive: {
+                topology: 'triangle-list',
+            },
+        });
+
+        // Create accumulator pipeline (renders to canvas)
+        const accumulatorPipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: {
+                module: accumulatorShaderModule,
+                entryPoint: 'vs_main',
+            },
+            fragment: {
+                module: accumulatorShaderModule,
+                entryPoint: 'fs_main',
+                targets: [
+                    {
+                        format: navigator.gpu.getPreferredCanvasFormat(),
+                    },
+                ],
+            },
+            primitive: {
+                topology: 'triangle-list',
+            },
+        });
+
+        return {
+            raytracerPipeline,
+            accumulatorPipeline,
+        };
+    }
+
+    private async createBuffersAndBindGroups(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
-        if (!this.raytracerPipeline) throw new Error('Raytracer pipeline not initialized');
-        if (!this.accumulatorPipeline) throw new Error('Accumulator pipeline not initialized');
+        if (!this.raytracerPipeline)
+            throw new Error('Raytracer pipeline not initialized');
+        if (!this.accumulatorPipeline)
+            throw new Error('Accumulator pipeline not initialized');
 
         try {
             const scene: Scene = await fetch('scene.json').then((r) =>
@@ -211,7 +241,9 @@ class WebGPURenderer {
             );
             this.currentScene = scene;
         } catch (error) {
-            console.error('Failed to load scene.json:', error);
+            Common.showError(
+                'Failed to load scene.json: ' + (error as Error).message
+            );
             throw error;
         }
 
@@ -220,7 +252,7 @@ class WebGPURenderer {
             size: 72,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        this.updateUniformsBuffer()
+        this.updateUniformsBuffer();
 
         // Create spheres buffer
         // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
@@ -302,7 +334,7 @@ class WebGPURenderer {
 
             // emissionStrength: f32
             trianglesData[trianglesOffset++] = triangle.emissionStrength;
-            
+
             // smoothness: f32
             trianglesData[trianglesOffset++] = triangle.smoothness;
             // padding: f32
@@ -317,7 +349,11 @@ class WebGPURenderer {
         });
 
         if (trianglesSize > 0) {
-            this.device.queue.writeBuffer(this.trianglesBuffer, 0, trianglesData);
+            this.device.queue.writeBuffer(
+                this.trianglesBuffer,
+                0,
+                trianglesData
+            );
         }
 
         try {
@@ -371,8 +407,7 @@ class WebGPURenderer {
                 ],
             });
         } catch (error) {
-            console.error('Failed to create bind groups:', error);
-            this.showError(
+            Common.showError(
                 'Bind group creation failed: ' + (error as Error).message
             );
             return;
@@ -407,7 +442,7 @@ class WebGPURenderer {
         uniformsOffset++;
 
         // frameIndex, resolution width, resolution height: f32
-        uniformsData[uniformsOffset++] = this.frameCounter;
+        uniformsData[uniformsOffset++] = this.frameIndex;
         uniformsOffset++;
         uniformsData[uniformsOffset++] = this.resolution.width;
         uniformsData[uniformsOffset++] = this.resolution.height;
@@ -417,13 +452,19 @@ class WebGPURenderer {
     }
 
     private render(): void {
-        if (!this.device || !this.context || !this.raytracerPipeline || !this.accumulatorPipeline || 
-            !this.raytracerBindGroup || !this.accumulatorBindGroup) {
+        if (
+            !this.device ||
+            !this.context ||
+            !this.raytracerPipeline ||
+            !this.accumulatorPipeline ||
+            !this.raytracerBindGroup ||
+            !this.accumulatorBindGroup
+        ) {
             return;
         }
 
         // Update uniforms buffer with current frame counter
-        this.frameCounter++;
+        this.frameIndex++;
         this.updateUniformsBuffer();
 
         // First pass: Raytracing to intermediate texture
@@ -440,7 +481,9 @@ class WebGPURenderer {
         };
 
         const commandEncoder = this.device.createCommandEncoder();
-        const raytracerPassEncoder = commandEncoder.beginRenderPass(raytracerRenderPassDescriptor);
+        const raytracerPassEncoder = commandEncoder.beginRenderPass(
+            raytracerRenderPassDescriptor
+        );
         raytracerPassEncoder.setPipeline(this.raytracerPipeline);
         raytracerPassEncoder.setBindGroup(0, this.raytracerBindGroup);
         raytracerPassEncoder.draw(6);
@@ -458,7 +501,9 @@ class WebGPURenderer {
                 },
             ],
         };
-        const accumulatorPassEncoder = commandEncoder.beginRenderPass(accumulatorRenderPassDescriptor);
+        const accumulatorPassEncoder = commandEncoder.beginRenderPass(
+            accumulatorRenderPassDescriptor
+        );
         accumulatorPassEncoder.setPipeline(this.accumulatorPipeline);
         accumulatorPassEncoder.setBindGroup(0, this.accumulatorBindGroup);
         accumulatorPassEncoder.draw(6);
@@ -467,40 +512,17 @@ class WebGPURenderer {
         this.device.queue.submit([commandEncoder.finish()]);
     }
 
-    private startRenderLoop(): void {
+    public startRenderLoop(): void {
         const loop = (): void => {
-            this.updateFPS();
+            this.fpsCounter.updateFPS();
             this.render();
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
     }
-
-    private updateFPS(): void {
-        this.frameCount++;
-        const currentTime = performance.now();
-        const deltaTime = currentTime - this.lastTime;
-
-        if (deltaTime >= 1000) {
-            const fps = Math.round((this.frameCount * 1000) / deltaTime);
-            this.fpsElement.textContent = fps.toString();
-            this.frameCount = 0;
-            this.lastTime = currentTime;
-        }
-    }
-
-    private showError(message: string): void {
-        const errorDiv = document.getElementById('error');
-        if (errorDiv) {
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-        }
-        console.error('WebGPU Error:', message);
-    }
 }
 
-
-function main(): void {
+async function main(): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
     if (!canvas) {
@@ -510,7 +532,10 @@ function main(): void {
         throw new Error('FPS element not found');
     }
 
-    WebGPURenderer.Create(canvas, fpsElement)
+    const renderer = await WebGPURenderer.Create(canvas, fpsElement);
+    if (renderer) {
+        // Start rendering loop in the background
+        renderer.startRenderLoop();
+    }
 }
 window.addEventListener('load', main);
-

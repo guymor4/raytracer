@@ -37,6 +37,7 @@ export default [
         GPUBuffer: 'readonly',
         GPUBindGroup: 'readonly',
         GPUTexture: 'readonly',
+        GPUSampler: 'readonly',
         GPUTextureFormat: 'readonly',
         GPUTextureUsage: 'readonly',
         GPUBufferUsage: 'readonly',
