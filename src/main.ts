@@ -557,9 +557,18 @@ class WebGPURenderer {
         if (!root) return 'BVH not initialized';
         
         const bbox = root.boundingBox;
-        const triangleCount = root.triangleIndices.length;
+        const leftChild = root.leftChild;
+        const rightChild = root.rightChild;
         
-        return `BVH Root: ${triangleCount} triangles, Box: (${bbox.min[0].toFixed(1)}, ${bbox.min[1].toFixed(1)}, ${bbox.min[2].toFixed(1)}) to (${bbox.max[0].toFixed(1)}, ${bbox.max[1].toFixed(1)}, ${bbox.max[2].toFixed(1)})`;
+        let info = `BVH Root: Box: (${bbox.min[0].toFixed(1)}, ${bbox.min[1].toFixed(1)}, ${bbox.min[2].toFixed(1)}) to (${bbox.max[0].toFixed(1)}, ${bbox.max[1].toFixed(1)}, ${bbox.max[2].toFixed(1)})`;
+        
+        if (leftChild && rightChild) {
+            const leftCount = leftChild.triangleIndices.length;
+            const rightCount = rightChild.triangleIndices.length;
+            info += ` | Split: L=${leftCount} R=${rightCount} triangles`;
+        }
+        
+        return info;
     }
 
     private render(): void {
@@ -592,13 +601,13 @@ class WebGPURenderer {
         };
 
         const commandEncoder = this.device.createCommandEncoder();
-        const raytracerPassEncoder = commandEncoder.beginRenderPass(
-            raytracerRenderPassDescriptor
-        );
-        raytracerPassEncoder.setPipeline(this.raytracerPipeline);
-        raytracerPassEncoder.setBindGroup(0, this.raytracerBindGroup);
-        raytracerPassEncoder.draw(6);
-        raytracerPassEncoder.end();
+        // const raytracerPassEncoder = commandEncoder.beginRenderPass(
+        //     raytracerRenderPassDescriptor
+        // );
+        // raytracerPassEncoder.setPipeline(this.raytracerPipeline);
+        // raytracerPassEncoder.setBindGroup(0, this.raytracerBindGroup);
+        // raytracerPassEncoder.draw(6);
+        // raytracerPassEncoder.end();
 
         // Second pass: Accumulation to canvas
         const accumulatorRenderPassDescriptor: GPURenderPassDescriptor = {
