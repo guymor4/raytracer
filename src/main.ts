@@ -2,6 +2,8 @@ import { Scene } from './types.js';
 import * as Common from './common.js';
 import { FPSCounter } from './FPSCounter.js';
 import { RethrownError } from './common.js';
+import { BVH } from './BVH.js';
+import { Mat4 } from './math.js';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -24,6 +26,12 @@ class WebGPURenderer {
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
+    private bvh: BVH | null = null;
+    
+    // Debug rendering
+    private debugPipeline: GPURenderPipeline | null = null;
+    private debugVertexBuffer: GPUBuffer | null = null;
+    private debugBindGroup: GPUBindGroup | null = null;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -229,6 +237,71 @@ class WebGPURenderer {
         };
     }
 
+    private async createDebugPipeline(): Promise<void> {
+        if (!this.device) throw new Error('Device not initialized');
+
+        const [commonCode, debugShaderCode] = await Promise.all([
+            fetch('common.wgsl').then((r) => r.text()),
+            fetch('debug.wgsl').then((r) => r.text()),
+        ]);
+        // Combine common utilities with shaders
+        const fullDebugShaderCode = commonCode + '\n' + debugShaderCode;
+
+
+        const debugShaderModule = this.device.createShaderModule({
+            code: fullDebugShaderCode,
+        });
+
+        this.debugPipeline = this.device.createRenderPipeline({
+            layout: 'auto',
+            vertex: {
+                module: debugShaderModule,
+                entryPoint: 'vs_main',
+                buffers: [{
+                    arrayStride: 12, // 3 floats * 4 bytes = 12 bytes
+                    attributes: [{
+                        format: 'float32x3',
+                        offset: 0,
+                        shaderLocation: 0,
+                    }]
+                }]
+            },
+            fragment: {
+                module: debugShaderModule,
+                entryPoint: 'fs_main',
+                targets: [{
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                }],
+            },
+            primitive: {
+                topology: 'line-list',
+            },
+        });
+    }
+
+    private createDebugBuffers(): void {
+        if (!this.device || !this.bvh || !this.debugPipeline || !this.uniformsBuffer) return;
+
+        // Create vertex buffer for wireframe
+        const wireframeVertices = this.bvh.getWireframeVertices();
+        this.debugVertexBuffer = this.device.createBuffer({
+            size: wireframeVertices.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(this.debugVertexBuffer, 0, wireframeVertices);
+
+        // Create bind group for debug rendering
+        this.debugBindGroup = this.device.createBindGroup({
+            layout: this.debugPipeline.getBindGroupLayout(0),
+            entries: [{
+                binding: 0,
+                resource: { buffer: this.uniformsBuffer },
+            }],
+        });
+
+        console.log(`Debug buffers created: ${this.bvh.getWireframeVertexCount()} vertices`);
+    }
+
     private async createBuffersAndBindGroups(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
         if (!this.raytracerPipeline)
@@ -420,6 +493,15 @@ class WebGPURenderer {
             );
             return;
         }
+
+        // Create BVH for triangles
+        console.log('Creating BVH...');
+        this.bvh = new BVH(this.currentScene.triangles);
+        console.log('BVH created successfully');
+
+        // Create debug rendering pipeline and buffers
+        await this.createDebugPipeline();
+        this.createDebugBuffers();
     }
 
     // TODO update only the frameIndex (camera data is static for now)
@@ -468,6 +550,18 @@ class WebGPURenderer {
         this.updateUniformsBuffer();
     }
 
+    public getBVHInfo(): string {
+        if (!this.bvh) return 'No BVH';
+        
+        const root = this.bvh.getRoot();
+        if (!root) return 'BVH not initialized';
+        
+        const bbox = root.boundingBox;
+        const triangleCount = root.triangleIndices.length;
+        
+        return `BVH Root: ${triangleCount} triangles, Box: (${bbox.min[0].toFixed(1)}, ${bbox.min[1].toFixed(1)}, ${bbox.min[2].toFixed(1)}) to (${bbox.max[0].toFixed(1)}, ${bbox.max[1].toFixed(1)}, ${bbox.max[2].toFixed(1)})`;
+    }
+
     private render(): void {
         if (
             !this.device ||
@@ -507,11 +601,10 @@ class WebGPURenderer {
         raytracerPassEncoder.end();
 
         // Second pass: Accumulation to canvas
-        const canvasTextureView = this.context.getCurrentTexture().createView();
         const accumulatorRenderPassDescriptor: GPURenderPassDescriptor = {
             colorAttachments: [
                 {
-                    view: canvasTextureView,
+                    view: this.context.getCurrentTexture().createView(),
                     clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store',
@@ -525,6 +618,28 @@ class WebGPURenderer {
         accumulatorPassEncoder.setBindGroup(0, this.accumulatorBindGroup);
         accumulatorPassEncoder.draw(6);
         accumulatorPassEncoder.end();
+
+        // Third pass: Debug wireframe rendering
+        if (this.debugPipeline && this.debugVertexBuffer && this.debugBindGroup && this.bvh) {
+            const debugRenderPassDescriptor: GPURenderPassDescriptor = {
+                colorAttachments: [
+                    {
+                        view: this.context.getCurrentTexture().createView(),
+                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                        loadOp: 'load', // Don't clear, draw over the accumulation result
+                        storeOp: 'store',
+                    },
+                ],
+                depthStencilAttachment: undefined,
+            };
+            
+            const debugPassEncoder = commandEncoder.beginRenderPass(debugRenderPassDescriptor);
+            debugPassEncoder.setPipeline(this.debugPipeline);
+            debugPassEncoder.setVertexBuffer(0, this.debugVertexBuffer);
+            debugPassEncoder.setBindGroup(0, this.debugBindGroup);
+            debugPassEncoder.draw(this.bvh.getWireframeVertexCount());
+            debugPassEncoder.end();
+        }
 
         this.device.queue.submit([commandEncoder.finish()]);
     }
@@ -553,12 +668,18 @@ async function main(): Promise<void> {
     if (renderer) {
         // Wire up UI controls
         const samplesInput = document.getElementById('samples') as HTMLInputElement;
+        const bvhInfo = document.getElementById('bvh-info') as HTMLDivElement;
         
         if (samplesInput) {
             samplesInput.addEventListener('input', () => {
                 const samples = parseInt(samplesInput.value) || 1;
                 renderer.setSamplesPerPixel(samples);
             });
+        }
+        
+        // Update BVH info
+        if (bvhInfo) {
+            bvhInfo.textContent = renderer.getBVHInfo();
         }
         
         // Start rendering loop in the background

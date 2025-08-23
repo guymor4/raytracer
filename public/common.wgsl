@@ -94,6 +94,49 @@ fn rotate_yaw_pitch(v: vec3<f32>, yaw: f32, pitch: f32) -> vec3<f32> {
     ));
 }
 
+fn makeViewMatrix(pos: vec3<f32>, rot_deg: vec3<f32>) -> mat4x4<f32> {
+    var rot_rad = rot_deg * 3.14159 / 180.0;
+
+    // Convert Euler rotation (pitch=y, yaw=x, roll=z depending on convention)
+    let cx = cos(rot_rad.x);
+    let sx = sin(rot_rad.x);
+    let cy = cos(rot_rad.y);
+    let sy = sin(rot_rad.y);
+    let cz = cos(rot_rad.z);
+    let sz = sin(rot_rad.z);
+
+    // Rotation matrix (ZYX order here)
+    let rotMat = mat4x4<f32>(
+        vec4<f32>( cy*cz,              cy*sz,             -sy, 0.0),
+        vec4<f32>( sx*sy*cz-cx*sz,    sx*sy*sz+cx*cz,    sx*cy, 0.0),
+        vec4<f32>( cx*sy*cz+sx*sz,    cx*sy*sz-sx*cz,    cx*cy, 0.0),
+        vec4<f32>( 0.0,               0.0,               0.0,   1.0)
+    );
+
+    // Translation (negative because we move world opposite to camera)
+    let transMat = mat4x4<f32>(
+        vec4<f32>(1.0, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, 1.0, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(-pos.x, -pos.y, -pos.z, 1.0)
+    );
+
+    return rotMat * transMat;
+}
+
+fn makePerspective(fov_deg: f32, aspect: f32, near: f32, far: f32) -> mat4x4<f32> {
+    let fov = to_radians(fov_deg);
+    let focal_length = 1.0 / tan(fov * 0.5);
+
+    return mat4x4<f32>(
+        vec4<f32>(focal_length / aspect, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, focal_length, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, (far+near)/(near-far), -1.0),
+        vec4<f32>(0.0, 0.0, (2.0*far*near)/(near-far), 0.0)
+    );
+}
+
+
 // Sampling functions
 fn sample_cosine_hemisphere(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
     // Generate two uniform random numbers

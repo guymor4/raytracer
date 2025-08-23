@@ -122,7 +122,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let right = normalize(cross(forward, world_up));
     let up = cross(right, forward); // Calculate up vector
 
-    let fov = uniforms.camera.fov * 3.14159 / 180.0;
+    let fov = to_radians(uniforms.camera.fov);
     let focal_length = 1.0 / tan(fov * 0.5);
 
     // Generate a random offset for anti aliasing (half pixel jitter)

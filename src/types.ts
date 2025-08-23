@@ -44,3 +44,17 @@ export interface Scene {
     spheres: Sphere[];
     triangles: Triangle[];
 }
+
+// BVH (Bounding Volume Hierarchy) structures
+export interface BoundingBox {
+    min: Vec3;
+    max: Vec3;
+}
+
+export interface BVHNode {
+    boundingBox: BoundingBox;
+    triangleIndices: number[]; // Indices of triangles in this node
+    leftChild: BVHNode | null;
+    rightChild: BVHNode | null;
+    isLeaf: boolean;
+}
