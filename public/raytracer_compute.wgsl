@@ -1,42 +1,11 @@
-// Pure raytracing shader - outputs raw raytraced color to intermediate texture
+// Compute raytracer - outputs to intermediate texture for accumulation
 // common.wgsl is included separately and concatenated
 
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-}
-
-// Vertex shader for a fullscreen quad
-@vertex
-fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    var pos = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>( 1.0,  1.0),
-        vec2<f32>(-1.0,  1.0)
-    );
-    
-    var uv = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(1.0, 0.0),
-        vec2<f32>(0.0, 0.0)
-    );
-    
-    var output: VertexOutput;
-    output.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
-    output.uv = uv[vertexIndex];
-    return output;
-}
-
-// Raytracer bindings - only geometry data, no accumulation textures
+// Bindings for compute shader
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
+@group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
 
 fn ray_all(ray: Ray) -> HitInfo {
    var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
@@ -78,8 +47,8 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         light += hit_info.emission * color;
         color *= hit_info.color;
 
-        if (color.x < 0.001 && color.y < 0.001 && color.z < 0.001) {
-            // If color is too dark, stop tracing
+        // If color is too dark, stop tracing
+        if (color.x + color.y + color.z < 0.01) {
             break;
         }
 
@@ -87,9 +56,11 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.01; // Offset to prevent self-intersection
         var hitNormal = hit_info.normal;
 
-        let isSpecularBounce = hit_info.specularProbability >= rand_f(state);
         let diffuseDir = sample_cosine_hemisphere(hitNormal, state);
+
+        let isSpecularBounce = hit_info.specularProbability >= rand_f(state);
         let specularDir = reflect(current_ray.direction, hitNormal);
+
         let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, isSpecularBounce)));
         current_ray = Ray(new_origin, new_direction);
     }
@@ -97,16 +68,26 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
     return light;
 }
 
-@fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let pixel_coords = vec2<i32>(global_id.xy);
+    let resolution = vec2<i32>(uniforms.resolution);
+    
+    // Check bounds
+    if (pixel_coords.x >= resolution.x || pixel_coords.y >= resolution.y) {
+        return;
+    }
+
     let aspect = uniforms.resolution.x / uniforms.resolution.y;
 
-    // Calculate pixel coordinates for random seeding
-    let pixelCoordRaw = vec2<i32>(i32(input.uv.x * uniforms.resolution.x), i32(input.uv.y * uniforms.resolution.y));
-    let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(uniforms.resolution.x - 1), i32(uniforms.resolution.y - 1)));
+    // Calculate UV coordinates
+    let uv = vec2<f32>(
+        (f32(pixel_coords.x) + 0.5) / uniforms.resolution.x,
+        (f32(pixel_coords.y) + 0.5) / uniforms.resolution.y
+    );
 
     // Initialize random state for sampling
-    var seed: u32 = u32(pixelCoord.y) * u32(uniforms.resolution.x) + u32(pixelCoord.x) + u32(uniforms.frameIndex) * 12345;
+    var seed: u32 = u32(pixel_coords.y) * u32(uniforms.resolution.x) + u32(pixel_coords.x) + u32(uniforms.frameIndex) * 12345;
     var state: u32 = wang_hash(seed);
 
     // Simple rotation approach: yaw (Y) and pitch (X) only for now
@@ -128,8 +109,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Generate a random offset for anti aliasing (half pixel jitter)
     var offset = vec2<f32>(rand_f(&state) - 0.5, rand_f(&state) - 0.5) / uniforms.resolution;
     let coord = vec2<f32>(
-        ((input.uv.x + offset.x) * 2.0 - 1.0) * aspect,
-        (1.0 - (input.uv.y + offset.y) * 2.0)
+        ((uv.x + offset.x) * 2.0 - 1.0) * aspect,
+        (1.0 - (uv.y + offset.y) * 2.0)
     );
     let ray_dir = normalize(
         right * coord.x +
@@ -137,7 +118,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         forward * focal_length
     );
     let ray = Ray(uniforms.camera.position, ray_dir);
-
 
     let maxBounceCount: u32 = 6; // Maximum number of bounces for ray tracing
 
@@ -147,6 +127,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     let color = totalColor / f32(uniforms.samplesPerPixel);
 
-    // Output raw raytraced color (no accumulation)
-    return vec4<f32>(color, 1.0);
+    // Write to intermediate texture
+    textureStore(intermediate_texture, pixel_coords, vec4<f32>(color, 1.0));
 }

@@ -167,7 +167,7 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let a = dot(edge01, h);
 
     // Ray is parallel to triangle
-    if (abs(a) < 0.0001) {
+    if (abs(a) < 0.001) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
@@ -185,7 +185,7 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     }
 
     let t = f * dot(edge02, q);
-    if (t < 0.001) {
+    if (t < 0.01) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 

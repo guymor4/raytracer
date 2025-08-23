@@ -7,13 +7,13 @@ class WebGPURenderer {
     private canvas: HTMLCanvasElement;
     private context: GPUCanvasContext | null = null;
     private device: GPUDevice | null = null;
-    private raytracerPipeline: GPURenderPipeline | null = null;
+    private raytracerComputePipeline: GPUComputePipeline | null = null;
     private accumulatorPipeline: GPURenderPipeline | null = null;
     private resolution: { width: number; height: number };
     private spheresBuffer: GPUBuffer | null = null;
     private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
-    private raytracerBindGroup: GPUBindGroup | null = null;
+    private raytracerComputeBindGroup: GPUBindGroup | null = null;
     private accumulatorBindGroup: GPUBindGroup | null = null;
     private intermediateTexture: GPUTexture | null = null;
     private accumulationTextureR: GPUTexture | null = null;
@@ -72,7 +72,7 @@ class WebGPURenderer {
                     renderer.device,
                     renderer.intermediateTexture
                 );
-                renderer.raytracerPipeline = pipelines.raytracerPipeline;
+                renderer.raytracerComputePipeline = pipelines.raytracerComputePipeline;
                 renderer.accumulatorPipeline = pipelines.accumulatorPipeline;
             } catch (error) {
                 throw new RethrownError(
@@ -106,7 +106,7 @@ class WebGPURenderer {
             size: [this.resolution.width, this.resolution.height],
             format: 'rgba16float',
             usage:
-                GPUTextureUsage.RENDER_ATTACHMENT |
+                GPUTextureUsage.STORAGE_BINDING |
                 GPUTextureUsage.TEXTURE_BINDING,
         });
 
@@ -140,30 +140,30 @@ class WebGPURenderer {
         device: GPUDevice,
         intermediateTexture: GPUTexture
     ): Promise<{
-        raytracerPipeline: GPURenderPipeline;
+        raytracerComputePipeline: GPUComputePipeline;
         accumulatorPipeline: GPURenderPipeline;
     }> {
-        const [commonCode, raytracerCode, accumulatorCode] = await Promise.all([
+        const [commonCode, raytracerComputeCode, accumulatorCode] = await Promise.all([
             fetch('common.wgsl').then((r) => r.text()),
-            fetch('raytracer.wgsl').then((r) => r.text()),
+            fetch('raytracer_compute.wgsl').then((r) => r.text()),
             fetch('accumulator.wgsl').then((r) => r.text()),
         ]);
 
         // Combine common utilities with shaders
-        const fullRaytracerCode = commonCode + '\n' + raytracerCode;
+        const fullRaytracerComputeCode = commonCode + '\n' + raytracerComputeCode;
         const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
 
-        const raytracerShaderModule = device.createShaderModule({
-            code: fullRaytracerCode,
+        const raytracerComputeShaderModule = device.createShaderModule({
+            code: fullRaytracerComputeCode,
         });
         const accumulatorShaderModule = device.createShaderModule({
             code: fullAccumulatorCode,
         });
 
         // Check for shader compilation errors
-        let info = await raytracerShaderModule.getCompilationInfo();
+        let info = await raytracerComputeShaderModule.getCompilationInfo();
         if (info.messages.length > 0) {
-            console.log('Raytracer shader compilation messages:');
+            console.log('Raytracer compute shader compilation messages:');
             for (const message of info.messages) {
                 console.log(
                     `${message.type}: ${message.message} (line ${message.lineNum})`
@@ -181,24 +181,12 @@ class WebGPURenderer {
             }
         }
 
-        // Create raytracer pipeline (renders to intermediateTexture)
-        const raytracerPipeline = device.createRenderPipeline({
+        // Create raytracer compute pipeline
+        const raytracerComputePipeline = device.createComputePipeline({
             layout: 'auto',
-            vertex: {
-                module: raytracerShaderModule,
-                entryPoint: 'vs_main',
-            },
-            fragment: {
-                module: raytracerShaderModule,
-                entryPoint: 'fs_main',
-                targets: [
-                    {
-                        format: intermediateTexture.format,
-                    },
-                ],
-            },
-            primitive: {
-                topology: 'triangle-list',
+            compute: {
+                module: raytracerComputeShaderModule,
+                entryPoint: 'main',
             },
         });
 
@@ -224,15 +212,15 @@ class WebGPURenderer {
         });
 
         return {
-            raytracerPipeline,
+            raytracerComputePipeline,
             accumulatorPipeline,
         };
     }
 
     private async createBuffersAndBindGroups(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
-        if (!this.raytracerPipeline)
-            throw new Error('Raytracer pipeline not initialized');
+        if (!this.raytracerComputePipeline)
+            throw new Error('Raytracer compute pipeline not initialized');
         if (!this.accumulatorPipeline)
             throw new Error('Accumulator pipeline not initialized');
 
@@ -365,9 +353,9 @@ class WebGPURenderer {
         }
 
         try {
-            // Create raytracer bind group using pipeline's layout
-            this.raytracerBindGroup = this.device.createBindGroup({
-                layout: this.raytracerPipeline!.getBindGroupLayout(0),
+            // Create raytracer compute bind group using pipeline's layout
+            this.raytracerComputeBindGroup = this.device.createBindGroup({
+                layout: this.raytracerComputePipeline!.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
@@ -380,6 +368,10 @@ class WebGPURenderer {
                     {
                         binding: 2,
                         resource: { buffer: this.trianglesBuffer },
+                    },
+                    {
+                        binding: 3,
+                        resource: this.intermediateTexture!.createView(),
                     },
                 ],
             });
@@ -472,9 +464,9 @@ class WebGPURenderer {
         if (
             !this.device ||
             !this.context ||
-            !this.raytracerPipeline ||
+            !this.raytracerComputePipeline ||
             !this.accumulatorPipeline ||
-            !this.raytracerBindGroup ||
+            !this.raytracerComputeBindGroup ||
             !this.accumulatorBindGroup
         ) {
             return;
@@ -484,27 +476,18 @@ class WebGPURenderer {
         this.frameIndex++;
         this.updateUniformsBuffer();
 
-        // First pass: Raytracing to intermediate texture
-        const intermediateTextureView = this.intermediateTexture!.createView();
-        const raytracerRenderPassDescriptor: GPURenderPassDescriptor = {
-            colorAttachments: [
-                {
-                    view: intermediateTextureView,
-                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                    loadOp: 'clear',
-                    storeOp: 'store',
-                },
-            ],
-        };
-
         const commandEncoder = this.device.createCommandEncoder();
-        const raytracerPassEncoder = commandEncoder.beginRenderPass(
-            raytracerRenderPassDescriptor
-        );
-        raytracerPassEncoder.setPipeline(this.raytracerPipeline);
-        raytracerPassEncoder.setBindGroup(0, this.raytracerBindGroup);
-        raytracerPassEncoder.draw(6);
-        raytracerPassEncoder.end();
+        
+        // First pass: Compute raytracing to intermediate texture
+        const computePass = commandEncoder.beginComputePass();
+        computePass.setPipeline(this.raytracerComputePipeline);
+        computePass.setBindGroup(0, this.raytracerComputeBindGroup);
+        
+        // Calculate dispatch size (8x8 workgroup size)
+        const dispatchX = Math.ceil(this.resolution.width / 8);
+        const dispatchY = Math.ceil(this.resolution.height / 8);
+        computePass.dispatchWorkgroups(dispatchX, dispatchY);
+        computePass.end();
 
         // Second pass: Accumulation to canvas
         const canvasTextureView = this.context.getCurrentTexture().createView();
