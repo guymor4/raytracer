@@ -162,7 +162,7 @@
       "v0": [1, 4.99, -1.8],
       "color": [1.0, 1.0, 1.0],
       "emissionColor": [1.0, 1.0, 1.0],
-      "emissionStrength": 10.0,
+      "emissionStrength": 5,
       "smoothness":  0,
       "specularProbability":  0
     },
@@ -172,7 +172,7 @@
       "v2": [-1, 4.99, -1.8],
       "color": [1.0, 1.0, 1.0],
       "emissionColor": [1.0, 1.0, 1.0],
-      "emissionStrength": 10.0,
+      "emissionStrength": 5,
       "smoothness":  0,
       "specularProbability":  0
     }
