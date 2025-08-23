@@ -140,13 +140,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
 
     let maxBounceCount: u32 = 6; // Maximum number of bounces for ray tracing
-    let samples: u32 = 1; // Number of samples per pixel
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
-    for (var i = 0u; i < samples; i++) {
+    for (var i = 0u; i < u32(uniforms.samplesPerPixel); i++) {
         totalColor += ray_trace(ray, maxBounceCount, &state);
     }
-    let color = totalColor / f32(samples);
+    let color = totalColor / f32(uniforms.samplesPerPixel);
 
     // Output raw raytraced color (no accumulation)
     return vec4<f32>(color, 1.0);

@@ -15,6 +15,7 @@ export interface Camera {
 export interface Uniforms {
     camera: Camera;
     frameIndex: number;
+    samples: number;
 }
 
 export interface Sphere {

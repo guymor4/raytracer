@@ -23,6 +23,7 @@ struct Triangle {
     v0: vec3<f32>,
     v1: vec3<f32>,
     v2: vec3<f32>,
+//    normal: vec3<f32>,
     color: vec3<f32>,
     emissionColor: vec3<f32>,
     emissionStrength: f32,
@@ -42,6 +43,7 @@ struct Uniforms {
     camera: Camera,
     frameIndex: f32,
     resolution: vec2<f32>,
+    samplesPerPixel: f32,
 }
 
 struct HitInfo {

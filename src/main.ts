@@ -23,6 +23,7 @@ class WebGPURenderer {
     private frameIndex = 0;
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
+    private samplesPerPixel = 1;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -249,7 +250,7 @@ class WebGPURenderer {
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
-            size: 72,
+            size: 80,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         this.updateUniformsBuffer();
@@ -426,8 +427,8 @@ class WebGPURenderer {
         if (!this.device || !this.uniformsBuffer || !this.currentScene) return;
 
         // Create uniforms buffer
-        // Uniforms struct: Camera + frameIndex + resolution
-        const uniformsData = new Float32Array(18);
+        // Uniforms struct: Camera + frameIndex + resolution + samples
+        const uniformsData = new Float32Array(20);
         let uniformsOffset = 0;
 
         // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
@@ -453,9 +454,18 @@ class WebGPURenderer {
         uniformsOffset++;
         uniformsData[uniformsOffset++] = this.resolution.width;
         uniformsData[uniformsOffset++] = this.resolution.height;
+
+        // samples: u32 (converted to f32 for buffer)
+        uniformsData[uniformsOffset++] = this.samplesPerPixel;
         // padding: f32 (4 bytes)
+        uniformsOffset++;
 
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
+    }
+
+    public setSamplesPerPixel(samples: number): void {
+        this.samplesPerPixel = Math.max(1, Math.min(16, samples));
+        this.updateUniformsBuffer();
     }
 
     private render(): void {
@@ -541,6 +551,16 @@ async function main(): Promise<void> {
 
     const renderer = await WebGPURenderer.Create(canvas, fpsElement);
     if (renderer) {
+        // Wire up UI controls
+        const samplesInput = document.getElementById('samples') as HTMLInputElement;
+        
+        if (samplesInput) {
+            samplesInput.addEventListener('input', () => {
+                const samples = parseInt(samplesInput.value) || 1;
+                renderer.setSamplesPerPixel(samples);
+            });
+        }
+        
         // Start rendering loop in the background
         renderer.startRenderLoop();
     }
