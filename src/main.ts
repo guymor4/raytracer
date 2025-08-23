@@ -284,7 +284,7 @@ class WebGPURenderer {
         }
 
         this.spheresBuffer = this.device.createBuffer({
-            size: Math.max(spheresSize, 64),
+            size: spheresSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
@@ -293,8 +293,8 @@ class WebGPURenderer {
         }
 
         // Create triangles buffer
-        // Triangle struct: vec3 v0 + padding1 + vec3 v1 + padding2 + vec3 v2 + padding3 + vec3 color + padding4 + vec3 emissionColor + emissionStrength + smoothness + padding = 88 bytes
-        const trianglesSize = this.currentScene.triangles.length * 88;
+        // Triangle struct: 96 bytes
+        const trianglesSize = this.currentScene.triangles.length * 96;
         const trianglesData = new Float32Array(trianglesSize / 4);
         let trianglesOffset = 0;
 

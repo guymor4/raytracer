@@ -188,10 +188,18 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let normal = normalize(cross(edge01, edge02));
 
     // Back-face culling
-    if (dot(normal, ray.direction) < 0.0) {
+    if (dot(normal, ray.direction) > 0.0) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
     }
 
     let emission = tri.emissionColor * tri.emissionStrength;
     return HitInfo(t, tri.color, normal, emission, tri.smoothness);
+}
+
+// Approximate triangle normal intersection using a small sphere at the triangle's center + normal
+fn ray_triangle_normal_intersect(ray: Ray, tri: Triangle) -> HitInfo {
+    let triangleCenter = (tri.v0 + tri.v1 + tri.v2) / 3.0;
+    let triangleNormal = normalize(cross(tri.v1 - tri.v0, tri.v2 - tri.v0));
+    let normalSphereCenter = triangleCenter + triangleNormal * 0.2;
+    return ray_sphere_intersect(ray, Sphere(normalSphereCenter, 0.1, triangleNormal, 0.0, vec3<f32>(), 0.0) );
 }
