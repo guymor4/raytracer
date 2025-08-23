@@ -255,7 +255,7 @@ class WebGPURenderer {
         this.updateUniformsBuffer();
 
         // Create spheres buffer
-        // Sphere struct: vec3 center + radius + vec3 color + padding1 + vec3 emissionColor + emissionStrength + vec4 padding = 64 bytes
+        // Sphere struct: 64 bytes
         const spheresSize = this.currentScene.spheres.length * 64;
         const spheresData = new Float32Array(spheresSize / 4);
         let spheresOffset = 0;
@@ -281,6 +281,12 @@ class WebGPURenderer {
             spheresData[spheresOffset++] = sphere.emissionColor[2];
             // emissionStrength: f32
             spheresData[spheresOffset++] = sphere.emissionStrength;
+            // specularProbability: f32
+            spheresData[spheresOffset++] = sphere.specularProbability;
+            // padding: f32 (4 bytes)
+            spheresData[spheresOffset++] = 0.0;
+            spheresData[spheresOffset++] = 0.0;
+            spheresData[spheresOffset++] = 0.0;
         }
 
         this.spheresBuffer = this.device.createBuffer({
@@ -337,8 +343,9 @@ class WebGPURenderer {
 
             // smoothness: f32
             trianglesData[trianglesOffset++] = triangle.smoothness;
+            // specularProbability: f32
+            trianglesData[trianglesOffset++] = triangle.specularProbability;
             // padding: f32
-            trianglesData[trianglesOffset++] = 0.0;
             trianglesData[trianglesOffset++] = 0.0;
             trianglesData[trianglesOffset++] = 0.0;
         }

@@ -16,6 +16,7 @@ struct Sphere {
     smoothness: f32,
     emissionColor: vec3<f32>,
     emissionStrength: f32,
+    specularProbability: f32,
 }
 
 struct Triangle {
@@ -26,6 +27,7 @@ struct Triangle {
     emissionColor: vec3<f32>,
     emissionStrength: f32,
     smoothness: f32,
+    specularProbability: f32,
 }
 
 struct Camera {
@@ -48,6 +50,7 @@ struct HitInfo {
     normal: vec3<f32>,
     emission: vec3<f32>,
     smoothness: f32,
+    specularProbability: f32,
 }
 
 // Random number generation
@@ -127,7 +130,7 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     let c = dot(oc, oc) - sphere.radius * sphere.radius;
     let discriminant = b * b - 4.0 * a * c;
     if (discriminant < 0.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     let sqrt_discriminant = sqrt(discriminant);
@@ -141,16 +144,16 @@ fn ray_sphere_intersect(ray: Ray, sphere: Sphere) -> HitInfo {
     if (t1 > 0.01) {
         let hit_point = ray.origin + ray.direction * t1;
         let normal = normalize(hit_point - sphere.center);
-        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
+        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness, sphere.specularProbability);
     }
 
     if (t2 > 0.01) {
         let hit_point = ray.origin + ray.direction * t2;
         let normal = normalize(hit_point - sphere.center);
-        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness);
+        return HitInfo(t1, sphere.color, normal, emission, sphere.smoothness, sphere.specularProbability);
     }
     
-    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+    return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
 }
 
 fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
@@ -163,25 +166,25 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
 
     // Ray is parallel to triangle
     if (abs(a) < 0.0001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     let f = 1.0 / a;
     let s = ray.origin - tri.v0;
     let u = f * dot(s, h);
     if (u < 0.0 || u > 1.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     let q = cross(s, edge01);
     let v = f * dot(ray.direction, q);
     if (v < 0.0 || u + v > 1.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     let t = f * dot(edge02, q);
     if (t < 0.001) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     // Calculate surface normal (counter-clockwise winding)
@@ -189,11 +192,11 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
 
     // Back-face culling
     if (dot(normal, ray.direction) > 0.0) {
-        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+        return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
     let emission = tri.emissionColor * tri.emissionStrength;
-    return HitInfo(t, tri.color, normal, emission, tri.smoothness);
+    return HitInfo(t, tri.color, normal, emission, tri.smoothness, tri.specularProbability);
 }
 
 // Approximate triangle normal intersection using a small sphere at the triangle's center + normal
@@ -201,5 +204,5 @@ fn ray_triangle_normal_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let triangleCenter = (tri.v0 + tri.v1 + tri.v2) / 3.0;
     let triangleNormal = normalize(cross(tri.v1 - tri.v0, tri.v2 - tri.v0));
     let normalSphereCenter = triangleCenter + triangleNormal * 0.2;
-    return ray_sphere_intersect(ray, Sphere(normalSphereCenter, 0.1, triangleNormal, 0.0, vec3<f32>(), 0.0) );
+    return ray_sphere_intersect(ray, Sphere(normalSphereCenter, 0.1, triangleNormal, 0.0, vec3<f32>(), 0.0, 0.0) );
 }

@@ -39,7 +39,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 
 fn ray_all(ray: Ray) -> HitInfo {
-   var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0);
+   var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
 
    // Check sphere intersections
    for (var i = 0u; i < arrayLength(&spheres); i++) {
@@ -86,13 +86,11 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         // Simple diffuse reflection
         let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.01; // Offset to prevent self-intersection
         var hitNormal = hit_info.normal;
-        if (dot(hitNormal, current_ray.direction) > 0.0) {
-            hitNormal = -hitNormal;
-        }
 
+        let isSpecularBounce = hit_info.specularProbability >= rand_f(state);
         let diffuseDir = sample_cosine_hemisphere(hitNormal, state);
         let specularDir = reflect(current_ray.direction, hitNormal);
-        let new_direction = mix(diffuseDir, specularDir, hit_info.smoothness);
+        let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, isSpecularBounce)));
         current_ray = Ray(new_origin, new_direction);
     }
 
