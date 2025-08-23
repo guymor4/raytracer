@@ -67,12 +67,14 @@ fn sample_light_triangles(hit_point: vec3<f32>, state: ptr<function, u32>) -> Li
     var light_count = 0u;
 
     for (var i = 0u; i < arrayLength(&triangles); i++) {
-        if (triangles[i].emissionStrength > 0.0) {
-            let area = triangle_area(triangles[i]);
-            let power = triangles[i].emissionStrength * area * (triangles[i].emissionColor.x + triangles[i].emissionColor.y + triangles[i].emissionColor.z);
-            total_power += power;
-            light_count++;
+        if (triangles[i].emissionStrength <= 0.0) {
+            continue;
         }
+
+        let area = triangle_area(triangles[i]);
+        let power = triangles[i].emissionStrength * area * (triangles[i].emissionColor.x + triangles[i].emissionColor.y + triangles[i].emissionColor.z);
+        total_power += power;
+        light_count++;
     }
 
     if (light_count == 0u || total_power <= 0.0) {
