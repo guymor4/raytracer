@@ -75,7 +75,7 @@ fn sample_light_triangles(hit_point: vec3<f32>, state: ptr<function, u32>) -> Li
     let distance = length(light_direction);
     let normalized_direction = light_direction / distance;
 
-    // Calculate triangle normal - ensure consistent orientation
+    // Calculate triangle normal
     let edge1 = selected_triangle.v1 - selected_triangle.v0;
     let edge2 = selected_triangle.v2 - selected_triangle.v0;
     let light_normal = normalize(cross(edge1, edge2));
@@ -269,14 +269,20 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         
         // Add emission from current hit with MIS weight for BRDF sampling
         if (hit_info.emission.x > 0.0 || hit_info.emission.y > 0.0 || hit_info.emission.z > 0.0) {
-            // This represents BRDF sampling hitting a light
-            // We need to calculate what the light sampling PDF would have been
-            let incoming_dir = -current_ray.direction;
-            let brdf_pdf_val = brdf_pdf(hit_info.normal, incoming_dir);
-
-            let direct_light_pdf_estimate = 0.001; // Very small to favor BRDF sampling
-            let mis_weight = power_heuristic(brdf_pdf_val, direct_light_pdf_estimate);
-//            light += hit_info.emission * color * mis_weight;
+            if (i > 0u) {
+                // This represents BRDF sampling hitting a light
+                // We need to calculate what the light sampling PDF would have been
+                // For now, use a simplified approach - full emission for non-primary rays
+                let incoming_dir = -normalize(current_ray.direction);
+                let brdf_pdf_val = brdf_pdf(hit_info.normal, incoming_dir);
+                // Simplified: assume light PDF is small, so BRDF sampling gets most weight
+                let light_pdf_estimate = 0.001; // Very small to favor BRDF sampling
+                let mis_weight = power_heuristic(brdf_pdf_val, light_pdf_estimate);
+                light += hit_info.emission * color * mis_weight;
+            } else {
+                // Primary rays see emission directly
+                light += hit_info.emission * color;
+            }
         }
         
         // Update color for next bounce
