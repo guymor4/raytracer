@@ -6,6 +6,54 @@
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var blue_noise_texture: texture_2d<f32>;
+@group(0) @binding(5) var blue_noise_sampler: sampler;
+
+// Blue noise sampling functions
+fn blue_noise_vec3(pixel_coords: vec2<i32>, frame_index: u32) -> vec3<f32> {
+    let texture_size = vec2<i32>(256, 256);
+    
+    // Add frame-based offset to avoid temporal correlation
+    let offset = vec2<i32>(
+        i32((frame_index * 37u) % 256u),
+        i32((frame_index * 17u) % 256u)
+    );
+
+    let coords = (pixel_coords + offset) % texture_size;
+    let uv = vec2<f32>(f32(coords.x) + 0.5, f32(coords.y) + 0.5) / vec2<f32>(f32(texture_size.x), f32(texture_size.y));
+    
+    return textureSampleLevel(blue_noise_texture, blue_noise_sampler, uv, 0.0).rgb;
+}
+//
+//// Blue noise version of hemisphere sampling
+//fn sample_cosine_hemisphere_blue(normal: vec3<f32>, pixel_coords: vec2<i32>, frame_index: u32, sample_index: u32) -> vec3<f32> {
+//    // Use different channels and offsets for different samples
+//    let r1 = blue_noise_f(pixel_coords, frame_index + sample_index * 73u, 0u);
+//    let r2 = blue_noise_f(pixel_coords, frame_index + sample_index * 127u, 1u);
+//
+//    // Cosine-weighted hemisphere sampling in tangent space
+//    let phi = 2.0 * PI * r1;
+//    let cos_theta = sqrt(r2);
+//    let sin_theta = sqrt(1.0 - r2);
+//
+//    let local_dir = vec3<f32>(
+//        cos(phi) * sin_theta,
+//        cos_theta,
+//        sin(phi) * sin_theta
+//    );
+//
+//    // Build an orthonormal basis around the normal
+//    let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(normal.y) > 0.99);
+//    let tangent = normalize(cross(up, normal));
+//    let bitangent = cross(normal, tangent);
+//
+//    // Transform from local (tangent space) to world space
+//    return normalize(
+//        tangent * local_dir.x +
+//        normal  * local_dir.y +
+//        bitangent * local_dir.z
+//    );
+//}
 
 fn ray_all(ray: Ray) -> HitInfo {
    var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
@@ -218,7 +266,7 @@ fn sample_direct_light(hit_point: vec3<f32>, hit_normal: vec3<f32>, state: ptr<f
     return direct_light;
 }
 
-fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f32> {
+fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>, pixel_coords: vec2<i32>, frame_index: u32) -> vec3<f32> {
     var sky_color = vec3<f32>(1.0, 1.0, 1.0) * 0.4;
     var color: vec3<f32> = vec3<f32>(1, 1, 1);
     var light: vec3<f32> = vec3<f32>(0, 0, 0);
@@ -347,8 +395,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let fov = uniforms.camera.fov * 3.14159 / 180.0;
     let focal_length = 1.0 / tan(fov * 0.5);
 
-    // Generate a random offset for anti aliasing (half pixel jitter)
-    var offset = vec2<f32>(rand_f(&state) - 0.5, rand_f(&state) - 0.5) / uniforms.resolution;
+    // Generate blue noise offset for anti aliasing (half pixel jitter)
+    var offset = (blue_noise_vec3(pixel_coords, u32(uniforms.frameIndex)).xy - vec2(0.5, 0.5)) / uniforms.resolution;
+
     let coord = vec2<f32>(
         ((uv.x + offset.x) * 2.0 - 1.0) * aspect,
         (1.0 - (uv.y + offset.y) * 2.0)
@@ -364,7 +413,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var totalColor = vec3<f32>(0.0, 0.0, 0.0);
     for (var i = 0u; i < u32(uniforms.samplesPerPixel); i++) {
-        totalColor += ray_trace(ray, maxBounceCount, &state);
+        totalColor += ray_trace(ray, maxBounceCount, &state, pixel_coords, u32(uniforms.frameIndex));
     }
     let color = totalColor / f32(uniforms.samplesPerPixel);
 

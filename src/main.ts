@@ -20,6 +20,8 @@ class WebGPURenderer {
     private accumulationTextureG: GPUTexture | null = null;
     private accumulationTextureB: GPUTexture | null = null;
     private textureSampler: GPUSampler | null = null;
+    private blueNoiseTexture: GPUTexture | null = null;
+    private blueNoiseSampler: GPUSampler | null = null;
     private frameIndex = 0;
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
@@ -61,7 +63,7 @@ class WebGPURenderer {
             });
 
             // Create GPU textures
-            renderer.createTextures();
+            await renderer.createTextures();
             if (!renderer.intermediateTexture) {
                 throw new Error('Intermediate texture not initialized');
             }
@@ -98,7 +100,7 @@ class WebGPURenderer {
         return renderer;
     }
 
-    private createTextures(): void {
+    private async createTextures(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
 
         // Create intermediate texture for raytracer output
@@ -133,6 +135,54 @@ class WebGPURenderer {
         this.textureSampler = this.device.createSampler({
             magFilter: 'linear',
             minFilter: 'linear',
+        });
+
+        // Load and create blue noise texture
+        await this.loadBlueNoiseTexture();
+    }
+
+    private async loadBlueNoiseTexture(): Promise<void> {
+        if (!this.device) throw new Error('Device not initialized');
+
+        // Load blue noise image
+        const img = new Image();
+        img.src = 'blue_noise_rgb.png';
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+        });
+
+        // Create canvas to extract image data
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        const data = new Uint8Array(imageData.data);
+
+        // Create GPU texture
+        this.blueNoiseTexture = this.device.createTexture({
+            size: [img.width, img.height],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+
+        // Upload texture data
+        this.device.queue.writeTexture(
+            { texture: this.blueNoiseTexture },
+            data,
+            { bytesPerRow: img.width * 4 },
+            { width: img.width, height: img.height }
+        );
+
+        // Create sampler for blue noise
+        this.blueNoiseSampler = this.device.createSampler({
+            magFilter: 'nearest',
+            minFilter: 'nearest',
+            addressModeU: 'repeat',
+            addressModeV: 'repeat',
         });
     }
 
@@ -372,6 +422,14 @@ class WebGPURenderer {
                     {
                         binding: 3,
                         resource: this.intermediateTexture!.createView(),
+                    },
+                    {
+                        binding: 4,
+                        resource: this.blueNoiseTexture!.createView(),
+                    },
+                    {
+                        binding: 5,
+                        resource: this.blueNoiseSampler!,
                     },
                 ],
             });
