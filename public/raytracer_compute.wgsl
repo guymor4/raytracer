@@ -242,7 +242,7 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
                 let shadow_ray = Ray(hit_point + hit_info.normal * 0.01, triangle_sample.direction);
                 let shadow_hit = ray_all(shadow_ray);
                 
-                if (shadow_hit.t < 0.0 || shadow_hit.t > triangle_sample.distance - 0.01) {
+                if (shadow_hit.t < 0.0 || shadow_hit.t > triangle_sample.distance - 0.1) {
                     let brdf_pdf_val = brdf_pdf(hit_info.normal, triangle_sample.direction);
                     let mis_weight = power_heuristic(triangle_sample.pdf, brdf_pdf_val);
                     let brdf = cos_theta / PI;
@@ -258,7 +258,7 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
                 let shadow_ray = Ray(hit_point + hit_info.normal * 0.001, sphere_sample.direction);
                 let shadow_hit = ray_all(shadow_ray);
 
-                if (shadow_hit.t < 0.0 || shadow_hit.t > sphere_sample.distance - 0.01) {
+                if (shadow_hit.t < 0.0 || shadow_hit.t > sphere_sample.distance - 0.1) {
                     let brdf_pdf_val = brdf_pdf(hit_info.normal, sphere_sample.direction);
                     let mis_weight = power_heuristic(sphere_sample.pdf, brdf_pdf_val);
                     let brdf = cos_theta / PI;
