@@ -12,12 +12,6 @@ export interface Camera {
     farPlane: number;
 }
 
-export interface Uniforms {
-    camera: Camera;
-    frameIndex: number;
-    samples: number;
-}
-
 export interface Sphere {
     center: Vec3;
     radius: number;

@@ -1,4 +1,4 @@
-import { Scene } from './types.js';
+import {Scene} from './types.js';
 import * as Common from './common.js';
 import { FPSCounter } from './FPSCounter.js';
 import { RethrownError } from './common.js';
@@ -9,13 +9,13 @@ class WebGPURenderer {
     private canvas: HTMLCanvasElement;
     private context: GPUCanvasContext | null = null;
     private device: GPUDevice | null = null;
-    private raytracerPipeline: GPURenderPipeline | null = null;
+    private raytracerComputePipeline: GPUComputePipeline | null = null;
     private accumulatorPipeline: GPURenderPipeline | null = null;
     private resolution: { width: number; height: number };
     private spheresBuffer: GPUBuffer | null = null;
     private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
-    private raytracerBindGroup: GPUBindGroup | null = null;
+    private raytracerComputeBindGroup: GPUBindGroup | null = null;
     private accumulatorBindGroup: GPUBindGroup | null = null;
     private intermediateTexture: GPUTexture | null = null;
     private accumulationTextureR: GPUTexture | null = null;
@@ -32,6 +32,7 @@ class WebGPURenderer {
     private debugPipeline: GPURenderPipeline | null = null;
     private debugVertexBuffer: GPUBuffer | null = null;
     private debugBindGroup: GPUBindGroup | null = null;
+    private debugEnabled: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -42,7 +43,8 @@ class WebGPURenderer {
 
     static async Create(
         canvas: HTMLCanvasElement,
-        fpsElement: HTMLElement
+        fpsElement: HTMLElement,
+        scenePath: string
     ): Promise<WebGPURenderer | null> {
         const renderer = new WebGPURenderer(canvas, fpsElement);
 
@@ -80,13 +82,25 @@ class WebGPURenderer {
                     renderer.device,
                     renderer.intermediateTexture
                 );
-                renderer.raytracerPipeline = pipelines.raytracerPipeline;
+                renderer.raytracerComputePipeline = pipelines.raytracerComputePipeline;
                 renderer.accumulatorPipeline = pipelines.accumulatorPipeline;
             } catch (error) {
                 throw new RethrownError(
                     'Failed to create pipelines',
                     error as Error
                 );
+            }
+
+            // Load scene
+            try {
+                renderer.currentScene = await fetch(scenePath).then((r) =>
+                    r.json()
+                );
+            } catch (error) {
+                Common.showError(
+                    'Failed to load scene.json: ' + (error as Error).message
+                );
+                throw error;
             }
 
             // Create scene buffers and bind groups
@@ -114,7 +128,7 @@ class WebGPURenderer {
             size: [this.resolution.width, this.resolution.height],
             format: 'rgba16float',
             usage:
-                GPUTextureUsage.RENDER_ATTACHMENT |
+                GPUTextureUsage.STORAGE_BINDING |
                 GPUTextureUsage.TEXTURE_BINDING,
         });
 
@@ -148,30 +162,30 @@ class WebGPURenderer {
         device: GPUDevice,
         intermediateTexture: GPUTexture
     ): Promise<{
-        raytracerPipeline: GPURenderPipeline;
+        raytracerComputePipeline: GPUComputePipeline;
         accumulatorPipeline: GPURenderPipeline;
     }> {
-        const [commonCode, raytracerCode, accumulatorCode] = await Promise.all([
+        const [commonCode, raytracerComputeCode, accumulatorCode] = await Promise.all([
             fetch('common.wgsl').then((r) => r.text()),
-            fetch('raytracer.wgsl').then((r) => r.text()),
+            fetch('raytracer_compute.wgsl').then((r) => r.text()),
             fetch('accumulator.wgsl').then((r) => r.text()),
         ]);
 
         // Combine common utilities with shaders
-        const fullRaytracerCode = commonCode + '\n' + raytracerCode;
+        const fullRaytracerComputeCode = commonCode + '\n' + raytracerComputeCode;
         const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
 
-        const raytracerShaderModule = device.createShaderModule({
-            code: fullRaytracerCode,
+        const raytracerComputeShaderModule = device.createShaderModule({
+            code: fullRaytracerComputeCode,
         });
         const accumulatorShaderModule = device.createShaderModule({
             code: fullAccumulatorCode,
         });
 
         // Check for shader compilation errors
-        let info = await raytracerShaderModule.getCompilationInfo();
+        let info = await raytracerComputeShaderModule.getCompilationInfo();
         if (info.messages.length > 0) {
-            console.log('Raytracer shader compilation messages:');
+            console.log('Raytracer compute shader compilation messages:');
             for (const message of info.messages) {
                 console.log(
                     `${message.type}: ${message.message} (line ${message.lineNum})`
@@ -189,24 +203,12 @@ class WebGPURenderer {
             }
         }
 
-        // Create raytracer pipeline (renders to intermediateTexture)
-        const raytracerPipeline = device.createRenderPipeline({
+        // Create raytracer compute pipeline
+        const raytracerComputePipeline = device.createComputePipeline({
             layout: 'auto',
-            vertex: {
-                module: raytracerShaderModule,
-                entryPoint: 'vs_main',
-            },
-            fragment: {
-                module: raytracerShaderModule,
-                entryPoint: 'fs_main',
-                targets: [
-                    {
-                        format: intermediateTexture.format,
-                    },
-                ],
-            },
-            primitive: {
-                topology: 'triangle-list',
+            compute: {
+                module: raytracerComputeShaderModule,
+                entryPoint: 'main',
             },
         });
 
@@ -232,7 +234,7 @@ class WebGPURenderer {
         });
 
         return {
-            raytracerPipeline,
+            raytracerComputePipeline,
             accumulatorPipeline,
         };
     }
@@ -304,22 +306,12 @@ class WebGPURenderer {
 
     private async createBuffersAndBindGroups(): Promise<void> {
         if (!this.device) throw new Error('Device not initialized');
-        if (!this.raytracerPipeline)
-            throw new Error('Raytracer pipeline not initialized');
+        if (!this.raytracerComputePipeline)
+            throw new Error('Raytracer compute pipeline not initialized');
         if (!this.accumulatorPipeline)
             throw new Error('Accumulator pipeline not initialized');
-
-        try {
-            const scene: Scene = await fetch('scene.json').then((r) =>
-                r.json()
-            );
-            this.currentScene = scene;
-        } catch (error) {
-            Common.showError(
-                'Failed to load scene.json: ' + (error as Error).message
-            );
-            throw error;
-        }
+        if (!this.currentScene)
+            throw new Error('Scene not loaded or initialized');
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
@@ -438,9 +430,9 @@ class WebGPURenderer {
         }
 
         try {
-            // Create raytracer bind group using pipeline's layout
-            this.raytracerBindGroup = this.device.createBindGroup({
-                layout: this.raytracerPipeline!.getBindGroupLayout(0),
+            // Create raytracer compute bind group using pipeline's layout
+            this.raytracerComputeBindGroup = this.device.createBindGroup({
+                layout: this.raytracerComputePipeline!.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
@@ -453,6 +445,10 @@ class WebGPURenderer {
                     {
                         binding: 2,
                         resource: { buffer: this.trianglesBuffer },
+                    },
+                    {
+                        binding: 3,
+                        resource: this.intermediateTexture!.createView(),
                     },
                 ],
             });
@@ -539,8 +535,7 @@ class WebGPURenderer {
 
         // samples: u32 (converted to f32 for buffer)
         uniformsData[uniformsOffset++] = this.samplesPerPixel;
-        // padding: f32 (4 bytes)
-        uniformsOffset++;
+        uniformsData[uniformsOffset++] = this.debugEnabled ? 1.0 : 0.0;
 
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
     }
@@ -575,9 +570,9 @@ class WebGPURenderer {
         if (
             !this.device ||
             !this.context ||
-            !this.raytracerPipeline ||
+            !this.raytracerComputePipeline ||
             !this.accumulatorPipeline ||
-            !this.raytracerBindGroup ||
+            !this.raytracerComputeBindGroup ||
             !this.accumulatorBindGroup
         ) {
             return;
@@ -587,27 +582,18 @@ class WebGPURenderer {
         this.frameIndex++;
         this.updateUniformsBuffer();
 
-        // First pass: Raytracing to intermediate texture
-        const intermediateTextureView = this.intermediateTexture!.createView();
-        const raytracerRenderPassDescriptor: GPURenderPassDescriptor = {
-            colorAttachments: [
-                {
-                    view: intermediateTextureView,
-                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                    loadOp: 'clear',
-                    storeOp: 'store',
-                },
-            ],
-        };
-
         const commandEncoder = this.device.createCommandEncoder();
-        // const raytracerPassEncoder = commandEncoder.beginRenderPass(
-        //     raytracerRenderPassDescriptor
-        // );
-        // raytracerPassEncoder.setPipeline(this.raytracerPipeline);
-        // raytracerPassEncoder.setBindGroup(0, this.raytracerBindGroup);
-        // raytracerPassEncoder.draw(6);
-        // raytracerPassEncoder.end();
+        
+        // First pass: Compute raytracing to intermediate texture
+        const computePass = commandEncoder.beginComputePass();
+        computePass.setPipeline(this.raytracerComputePipeline);
+        computePass.setBindGroup(0, this.raytracerComputeBindGroup);
+        
+        // Calculate dispatch size (8x8 workgroup size)
+        const dispatchX = Math.ceil(this.resolution.width / 8);
+        const dispatchY = Math.ceil(this.resolution.height / 8);
+        computePass.dispatchWorkgroups(dispatchX, dispatchY);
+        computePass.end();
 
         // Second pass: Accumulation to canvas
         const accumulatorRenderPassDescriptor: GPURenderPassDescriptor = {
@@ -661,38 +647,108 @@ class WebGPURenderer {
         };
         requestAnimationFrame(loop);
     }
+
+    setDebug(checked: boolean) {
+        this.debugEnabled = checked;
+    }
+
+    resetAccumulation() {
+        this.frameIndex = 0;
+        this.updateUniformsBuffer();
+    }
 }
 
-async function main(): Promise<void> {
+async function main(scenePath: string = 'scene.json'): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
+    const settingsElement = document.getElementById('settings');
+
     if (!canvas) {
         throw new Error('Canvas element not found');
     }
     if (!fpsElement) {
         throw new Error('FPS element not found');
     }
-
-    const renderer = await WebGPURenderer.Create(canvas, fpsElement);
-    if (renderer) {
-        // Wire up UI controls
-        const samplesInput = document.getElementById('samples') as HTMLInputElement;
-        const bvhInfo = document.getElementById('bvh-info') as HTMLDivElement;
-        
-        if (samplesInput) {
-            samplesInput.addEventListener('input', () => {
-                const samples = parseInt(samplesInput.value) || 1;
-                renderer.setSamplesPerPixel(samples);
-            });
-        }
-        
-        // Update BVH info
-        if (bvhInfo) {
-            bvhInfo.textContent = renderer.getBVHInfo();
-        }
-        
-        // Start rendering loop in the background
-        renderer.startRenderLoop();
+    if (!settingsElement) {
+        throw new Error('Settings element not found');
     }
+
+    const renderer = await WebGPURenderer.Create(canvas, fpsElement, scenePath);
+    if (!renderer) {
+        return;
+    }
+
+    // Create settings UI and wire up events
+    settingsElement.innerHTML = ''; // Clear existing content
+
+    // Add input for scene selection
+    const sceneDiv = document.createElement('div');
+    const sceneLabel = document.createElement('label');
+    sceneLabel.textContent = 'Scene: ';
+    const sceneSelect = document.createElement('select');
+    const scenes = {'Spheres': 'scene_spheres.json', 'Boxes': 'scene_boxes.json'};
+    for (const [sceneName, scenePath] of Object.entries(scenes)) {
+        const option = document.createElement('option');
+        option.value = scenePath;
+        option.textContent = sceneName;
+        sceneSelect.appendChild(option);
+    }
+    sceneSelect.onchange = (event) => {
+        const value = (event.target as HTMLSelectElement).value;
+        // For simplicity, we reload the entire renderer with the new scene
+        main(value); // Reload the main function to reset with new scene
+    };
+    sceneDiv.appendChild(sceneLabel);
+    sceneDiv.appendChild(sceneSelect);
+    settingsElement.appendChild(sceneDiv);
+
+    // Add input for samples per pixel
+    const samplesDiv = document.createElement('div');
+    const samplesLabel = document.createElement('label');
+    samplesLabel.textContent = 'Samples per pixel: ';
+    const samplesInput = document.createElement('input');
+    samplesInput.type = 'number';
+    samplesInput.min = '1';
+    samplesInput.max = '16';
+    samplesInput.value = '1';
+    samplesInput.oninput = (event) => {
+        const value = (event.target as HTMLInputElement).value;
+        const samples = parseInt(value) || 1;
+        renderer.setSamplesPerPixel(samples);
+    }
+    samplesDiv.appendChild(samplesLabel);
+    samplesDiv.appendChild(samplesInput);
+    settingsElement.appendChild(samplesDiv);
+
+    // Add a debug checkbox
+    const enableDebugDiv = document.createElement('div');
+    const enableDebugLabel = document.createElement('label');
+    enableDebugLabel.textContent = 'Enable Debug';
+    const enableDebugCheckbox = document.createElement('input');
+    enableDebugCheckbox.type = 'checkbox';
+    enableDebugCheckbox.onchange = (event) => {
+        const checked = (event.target as HTMLInputElement).checked;
+        renderer.setDebug(checked);
+    }
+    enableDebugDiv.appendChild(enableDebugCheckbox);
+    enableDebugDiv.appendChild(enableDebugLabel);
+    settingsElement.appendChild(enableDebugDiv);
+
+    // Reset accumulation button
+    const resetButton = document.createElement('button');
+    resetButton.textContent = 'Reset accumulation';
+    resetButton.onclick = () => {
+        renderer.resetAccumulation();
+    };
+    settingsElement.appendChild(resetButton);
+
+    // Update BVH info display
+    const bvhInfo = document.getElementById('bvh-info') as HTMLDivElement;
+    if (bvhInfo) {
+        bvhInfo.textContent = renderer.getBVHInfo();
+    }
+
+    // Start rendering loop in the background
+    renderer.startRenderLoop();
 }
-window.addEventListener('load', main);
+window.addEventListener('load', () => main());

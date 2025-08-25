@@ -44,6 +44,7 @@ struct Uniforms {
     frameIndex: f32,
     resolution: vec2<f32>,
     samplesPerPixel: f32,
+    debugEnabled: f32
 }
 
 struct HitInfo {
@@ -136,7 +137,13 @@ fn makePerspective(fov_deg: f32, aspect: f32, near: f32, far: f32) -> mat4x4<f32
     );
 }
 
-
+// Light sampling result
+struct LightSample {
+    direction: vec3<f32>,
+    emission: vec3<f32>,
+    distance: f32,
+    pdf: f32,
+}
 // Sampling functions
 fn sample_cosine_hemisphere(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
     // Generate two uniform random numbers
@@ -210,7 +217,7 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let a = dot(edge01, h);
 
     // Ray is parallel to triangle
-    if (abs(a) < 0.0001) {
+    if (abs(a) < 0.001) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
@@ -228,7 +235,7 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     }
 
     let t = f * dot(edge02, q);
-    if (t < 0.001) {
+    if (t < 0.01) {
         return HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
     }
 
@@ -242,6 +249,27 @@ fn ray_triangle_intersect(ray: Ray, tri: Triangle) -> HitInfo {
 
     let emission = tri.emissionColor * tri.emissionStrength;
     return HitInfo(t, tri.color, normal, emission, tri.smoothness, tri.specularProbability);
+}
+
+// Sample a random point on a triangle
+fn sample_triangle_point(tri: Triangle, state: ptr<function, u32>) -> vec3<f32> {
+    let r1 = rand_f(state);
+    let r2 = rand_f(state);
+    
+    // Uniform sampling of triangle using barycentric coordinates
+    let sqrt_r1 = sqrt(r1);
+    let u = 1.0 - sqrt_r1;
+    let v = r2 * sqrt_r1;
+    let w = 1.0 - u - v;
+    
+    return u * tri.v0 + v * tri.v1 + w * tri.v2;
+}
+
+// Calculate triangle area
+fn triangle_area(tri: Triangle) -> f32 {
+    let edge1 = tri.v1 - tri.v0;
+    let edge2 = tri.v2 - tri.v0;
+    return 0.5 * length(cross(edge1, edge2));
 }
 
 // Approximate triangle normal intersection using a small sphere at the triangle's center + normal
