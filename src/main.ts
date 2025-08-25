@@ -85,14 +85,12 @@ class WebGPURenderer {
 
             // Load scene
             try {
-                renderer.currentScene = await fetch(scenePath).then((r) =>
-                    r.json()
-                );
+                renderer.currentScene = await Common.loadScene(scenePath);
             } catch (error) {
-                Common.showError(
-                    'Failed to load scene.json: ' + (error as Error).message
+                throw new RethrownError(
+                    `Failed to load '${scenePath}'`,
+                    error as Error
                 );
-                throw error;
             }
 
             // Create scene buffers and bind groups
