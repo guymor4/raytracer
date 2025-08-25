@@ -185,7 +185,7 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
     var sky_color = vec3<f32>(1.0, 1.0, 1.0) * 0.4;
     var color: vec3<f32> = vec3<f32>(1, 1, 1);
     var light: vec3<f32> = vec3<f32>(0, 0, 0);
-    var isSpecularBounce = false; // Track if the last bounce was specular
+    var is_specular_bounce = false; // Track if the last bounce was specular
 
     var current_ray = ray;
     for (var i = 0u; i < maxBounceCount; i++) {
@@ -222,8 +222,10 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         // TODO implement sphere light sampling with MIS as well (use sample_light_spheres() function)
         
         // Add emission from current hit with MIS weight for BRDF sampling
+        // NOTE we only do this for primary rays or specular bounces (because specular can't hit lights via direct sampling)
+        let is_primary_ray = (i == 0u);
         let is_emissive = hit_info.emission.x + hit_info.emission.y + hit_info.emission.z > 0.01;
-        if (uniforms.debugEnabled > 0.5 || ((i == 0u && is_emissive) || isSpecularBounce)) {
+        if ((is_primary_ray && is_emissive) || is_specular_bounce) {
             // This represents BRDF sampling hitting a light
             // We need to calculate what the light sampling PDF would have been
             // For now, use a simplified approach - full emission for non-primary rays
@@ -257,11 +259,11 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         }
 
         // Continue with BRDF sampling for indirect lighting
-        isSpecularBounce = hit_info.specularProbability >= rand_f(state);
+        is_specular_bounce = hit_info.specularProbability >= rand_f(state);
 
         let diffuseDir = sample_cosine_hemisphere(hit_info.normal, state);
         let specularDir = reflect(current_ray.direction, hit_info.normal);
-        let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, isSpecularBounce)));
+        let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, is_specular_bounce)));
 
         let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.01;
         current_ray = Ray(new_origin, new_direction);

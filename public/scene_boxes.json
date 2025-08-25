@@ -1,0 +1,363 @@
+{
+  "camera": {
+    "position": [0.0, 2, 5.0],
+    "rotation": [0, 0, 0],
+    "fov": 40.0,
+    "nearPlane": 0.1,
+    "farPlane": 1000.0
+  },
+  "spheres": [{
+    "center": [-1.0, 10.02, -3.0],
+    "radius": 1.0,
+    "color": [0.2, 0.9, 0.9],
+    "emissionColor": [0.0, 0.0, 0.0],
+    "emissionStrength": 0.0,
+    "smoothness": 0,
+    "specularProbability": 0
+  }],
+  "triangles": [
+    {
+      "v0": [-2.5, 0.0, -5.0],
+      "v1": [-2.5, 0.0,  0.0],
+      "v2": [ 2.5, 0.0, -5.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [2.5, 0.0, -5.0],
+      "v2": [2.5, 0.0, 0.0],
+      "v1": [-2.5, 0.0, 0.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [-2.5, 5.0,  0.0],
+      "v1": [-2.5, 5.0, -5.0],
+      "v2": [ 2.5, 5.0,  0.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 5.0,  0.0],
+      "v1": [-2.5, 5.0, -5.0],
+      "v2": [ 2.5, 5.0, -5.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [-2.5, 0.0, -5.0],
+      "v1": [ 2.5, 0.0, -5.0],
+      "v2": [-2.5, 5.0, -5.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 0.0, -5.0],
+      "v1": [ 2.5, 5.0, -5.0],
+      "v2": [-2.5, 5.0, -5.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [-2.5, 0.0,  0.0],
+      "v1": [-2.5, 0.0, -5.0],
+      "v2": [-2.5, 5.0,  0.0],
+      "color": [1.0, 0.0, 0.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [-2.5, 5.0,  0.0],
+      "v1": [-2.5, 0.0, -5.0],
+      "v2": [-2.5, 5.0, -5.0],
+      "color": [1.0, 0.0, 0.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 0.0, -5.0],
+      "v1": [ 2.5, 0.0,  0.0],
+      "v2": [ 2.5, 5.0, -5.0],
+      "color": [0.0, 1.0, 0.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 0.0,  0.0],
+      "v1": [ 2.5, 5.0,  0.0],
+      "v2": [ 2.5, 5.0, -5.0],
+      "color": [0.0, 1.0, 0.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 0.0,  0.0],
+      "v1": [ -2.5, 5.0, 0.0],
+      "v2": [ 2.5, 5.0,  0.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [ 2.5, 0.0,  0.0],
+      "v1": [ -2.5, 0.0,  0.0],
+      "v2": [ -2.5, 5.0, 0.0],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+
+    {
+      "v0": [-1.4, 0.0, -2.3],
+      "v1": [-0.6, 0.0, -3.1],
+      "v2": [-1.4, 3.5, -2.3],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-0.6, 0.0, -3.1],
+      "v1": [-0.6, 3.5, -3.1],
+      "v2": [-1.4, 3.5, -2.3],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-0.6, 0.0, -3.1],
+      "v1": [-1.4, 0.0, -3.9],
+      "v2": [-0.6, 3.5, -3.1],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-1.4, 0.0, -3.9],
+      "v1": [-1.4, 3.5, -3.9],
+      "v2": [-0.6, 3.5, -3.1],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-1.4, 0.0, -3.9],
+      "v1": [-2.2, 0.0, -3.1],
+      "v2": [-1.4, 3.5, -3.9],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-2.2, 0.0, -3.1],
+      "v1": [-2.2, 3.5, -3.1],
+      "v2": [-1.4, 3.5, -3.9],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-2.2, 0.0, -3.1],
+      "v1": [-1.4, 0.0, -2.3],
+      "v2": [-2.2, 3.5, -3.1],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-1.4, 0.0, -2.3],
+      "v1": [-1.4, 3.5, -2.3],
+      "v2": [-2.2, 3.5, -3.1],
+      "color": [0.4, 0.4, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 1,
+      "specularProbability": 1
+    },
+    {
+      "v0": [-1.4, 3.5, -2.3],
+      "v1": [-0.6, 3.5, -3.1],
+      "v2": [-2.2, 3.5, -3.1],
+      "color": [0.9, 0.9, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [-0.6, 3.5, -3.1],
+      "v1": [-1.4, 3.5, -3.9],
+      "v2": [-2.2, 3.5, -3.1],
+      "color": [0.9, 0.9, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+
+    {
+      "v0": [0.8, 0.0, -1.2],
+      "v1": [1.6, 0.0, -2.0],
+      "v2": [0.8, 1.8, -1.2],
+      "color": [0.4, 0.4, 0.4],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [1.6, 0.0, -2.0],
+      "v1": [1.6, 1.8, -2.0],
+      "v2": [0.8, 1.8, -1.2],
+      "color": [0.4, 0.4, 0.4],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [1.6, 0.0, -2.0],
+      "v1": [0.8, 0.0, -2.8],
+      "v2": [1.6, 1.8, -2.0],
+      "color": [0.35, 0.35, 0.35],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.8, 0.0, -2.8],
+      "v1": [0.8, 1.8, -2.8],
+      "v2": [1.6, 1.8, -2.0],
+      "color": [0.35, 0.35, 0.35],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.8, 0.0, -2.8],
+      "v1": [0.0, 0.0, -2.0],
+      "v2": [0.8, 1.8, -2.8],
+      "color": [0.3, 0.3, 0.3],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.0, 0.0, -2.0],
+      "v1": [0.0, 1.8, -2.0],
+      "v2": [0.8, 1.8, -2.8],
+      "color": [0.3, 0.3, 0.3],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.0, 0.0, -2.0],
+      "v1": [0.8, 0.0, -1.2],
+      "v2": [0.0, 1.8, -2.0],
+      "color": [0.45, 0.45, 0.45],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.8, 0.0, -1.2],
+      "v1": [0.8, 1.8, -1.2],
+      "v2": [0.0, 1.8, -2.0],
+      "color": [0.45, 0.45, 0.45],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [0.8, 1.8, -1.2],
+      "v1": [1.6, 1.8, -2.0],
+      "v2": [0.0, 1.8, -2.0],
+      "color": [0.9, 0.9, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+    {
+      "v0": [1.6, 1.8, -2.0],
+      "v1": [0.8, 1.8, -2.8],
+      "v2": [0.0, 1.8, -2.0],
+      "color": [0.9, 0.9, 0.9],
+      "emissionColor": [0.0, 0.0, 0.0],
+      "emissionStrength": 0.0,
+      "smoothness": 0,
+      "specularProbability": 0
+    },
+
+    {
+      "v2": [1, 4.99, -3.4],
+      "v1": [-1, 4.99, -1.8],
+      "v0": [1, 4.99, -1.8],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [1.0, 1.0, 1.0],
+      "emissionStrength": 5,
+      "smoothness":  0,
+      "specularProbability":  0
+    },
+    {
+      "v0": [-1, 4.99, -3.4],
+      "v1": [1, 4.99, -3.4],
+      "v2": [-1, 4.99, -1.8],
+      "color": [1.0, 1.0, 1.0],
+      "emissionColor": [1.0, 1.0, 1.0],
+      "emissionStrength": 10,
+      "smoothness":  0,
+      "specularProbability":  0
+    }
+  ]
+}
