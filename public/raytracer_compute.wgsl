@@ -7,6 +7,10 @@
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
 
+fn luminance(color: vec3<f32>) -> f32 {
+    return dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
 fn ray_all(ray: Ray) -> HitInfo {
    var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
 
@@ -41,7 +45,7 @@ fn sample_light_triangles(hit_point: vec3<f32>, state: ptr<function, u32>) -> Li
         }
 
         let area = triangle_area(triangles[i]);
-        let power = triangles[i].emissionStrength * area * (triangles[i].emissionColor.x + triangles[i].emissionColor.y + triangles[i].emissionColor.z);
+        let power = triangles[i].emissionStrength * area * luminance(triangles[i].emissionColor);
         total_power += power;
         light_count++;
     }
@@ -59,7 +63,7 @@ fn sample_light_triangles(hit_point: vec3<f32>, state: ptr<function, u32>) -> Li
     for (var i = 0u; i < arrayLength(&triangles); i++) {
         if (triangles[i].emissionStrength > 0.0) {
             let area = triangle_area(triangles[i]);
-            let power = triangles[i].emissionStrength * area * (triangles[i].emissionColor.x + triangles[i].emissionColor.y + triangles[i].emissionColor.z);
+            let power = triangles[i].emissionStrength * area * luminance(triangles[i].emissionColor);
             accumulated_power += power;
 
             if (accumulated_power >= random_power && !found) {
@@ -86,9 +90,11 @@ fn sample_light_triangles(hit_point: vec3<f32>, state: ptr<function, u32>) -> Li
         return LightSample(vec3<f32>(0.0), vec3<f32>(0.0), 0.0, 0.0);
     }
 
-    // Calculate PDF: (distance^2) / (area * cos_theta * num_lights)
+    // Calculate PDF: (distance^2) / (area * cos_theta) * (power / total_power) <- pribability of selecting this light
     let area = triangle_area(selected_triangle);
-    let pdf = (distance * distance) / (area * cos_light * f32(light_count));
+    let power = selected_triangle.emissionStrength * area * luminance(selected_triangle.emissionColor);
+    var pdf = (distance * distance) / (area * cos_light) * (power / total_power);
+
 
     let emission = selected_triangle.emissionColor * selected_triangle.emissionStrength;
 
@@ -175,53 +181,11 @@ fn brdf_pdf(hit_normal: vec3<f32>, direction: vec3<f32>) -> f32 {
     return cos_theta / PI; // Lambertian BRDF PDF
 }
 
-fn sample_direct_light(hit_point: vec3<f32>, hit_normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
-    var direct_light = vec3<f32>(0.0);
-
-    // ***********
-    // TODO this function currently samples both triangle and sphere lights every time, it should pick at random to be more efficient
-    // ***********
-
-    // Sample triangle lights
-    let triangle_sample = sample_light_triangles(hit_point, state);
-    if (triangle_sample.pdf > 0.0) {
-        // Check if light direction is above surface
-        let cos_theta = dot(hit_normal, triangle_sample.direction);
-        if (cos_theta > 0.0) {
-            // Cast shadow ray
-            let shadow_ray = Ray(hit_point + hit_normal * 0.01, triangle_sample.direction);
-            let shadow_hit = ray_all(shadow_ray);
-
-            // If shadow ray doesn't hit anything before the light, add contribution
-            if (shadow_hit.t < 0.0 || shadow_hit.t > triangle_sample.distance - 0.01) {
-                let brdf = cos_theta / PI; // Lambertian BRDF
-                direct_light += triangle_sample.emission * brdf / triangle_sample.pdf;
-            }
-        }
-    }
-    
-    // Sample sphere lights
-    let sphere_sample = sample_light_spheres(hit_point, state);
-    if (sphere_sample.pdf > 0.0) {
-        let cos_theta = dot(hit_normal, sphere_sample.direction);
-        if (cos_theta > 0.0) {
-            let shadow_ray = Ray(hit_point + hit_normal * 0.001, sphere_sample.direction);
-            let shadow_hit = ray_all(shadow_ray);
-
-            if (shadow_hit.t < 0.0 || shadow_hit.t > sphere_sample.distance - 0.01) {
-                let brdf = cos_theta / PI;
-                direct_light += sphere_sample.emission * brdf / sphere_sample.pdf;
-            }
-        }
-    }
-    
-    return direct_light;
-}
-
 fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f32> {
     var sky_color = vec3<f32>(1.0, 1.0, 1.0) * 0.4;
     var color: vec3<f32> = vec3<f32>(1, 1, 1);
     var light: vec3<f32> = vec3<f32>(0, 0, 0);
+    var is_specular_bounce = false; // Track if the last bounce was specular
 
     var current_ray = ray;
     for (var i = 0u; i < maxBounceCount; i++) {
@@ -233,7 +197,11 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
         }
 
         let hit_point = current_ray.origin + current_ray.direction * hit_info.t;
-        
+
+        // ***********
+        // TODO this function currently samples both triangle and sphere lights every time, it should pick at random to be more efficient
+        // ***********
+
         // Multiple Importance Sampling: Sample lights directly with MIS weight
         let triangle_sample = sample_light_triangles(hit_point, state);
         if (triangle_sample.pdf > 0.0) {
@@ -241,7 +209,8 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
             if (cos_theta > 0.0) {
                 let shadow_ray = Ray(hit_point + hit_info.normal * 0.01, triangle_sample.direction);
                 let shadow_hit = ray_all(shadow_ray);
-                
+
+                // If no occlusion or occlusion is beyond the light distance
                 if (shadow_hit.t < 0.0 || shadow_hit.t > triangle_sample.distance - 0.1) {
                     let brdf_pdf_val = brdf_pdf(hit_info.normal, triangle_sample.direction);
                     let mis_weight = power_heuristic(triangle_sample.pdf, brdf_pdf_val);
@@ -250,59 +219,53 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
                 }
             }
         }
-        
-        let sphere_sample = sample_light_spheres(hit_point, state);
-        if (sphere_sample.pdf > 0.0) {
-            let cos_theta = dot(hit_info.normal, sphere_sample.direction);
-            if (cos_theta > 0.0) {
-                let shadow_ray = Ray(hit_point + hit_info.normal * 0.001, sphere_sample.direction);
-                let shadow_hit = ray_all(shadow_ray);
-
-                if (shadow_hit.t < 0.0 || shadow_hit.t > sphere_sample.distance - 0.1) {
-                    let brdf_pdf_val = brdf_pdf(hit_info.normal, sphere_sample.direction);
-                    let mis_weight = power_heuristic(sphere_sample.pdf, brdf_pdf_val);
-                    let brdf = cos_theta / PI;
-                    light += sphere_sample.emission * brdf * color * mis_weight / sphere_sample.pdf;
-                }
-            }
-        }
+        // TODO implement sphere light sampling with MIS as well (use sample_light_spheres() function)
         
         // Add emission from current hit with MIS weight for BRDF sampling
-        if (hit_info.emission.x > 0.0 || hit_info.emission.y > 0.0 || hit_info.emission.z > 0.0) {
-            if (i > 0u) {
-                // This represents BRDF sampling hitting a light
-                // We need to calculate what the light sampling PDF would have been
-                // For now, use a simplified approach - full emission for non-primary rays
-                let incoming_dir = -normalize(current_ray.direction);
-                let brdf_pdf_val = brdf_pdf(hit_info.normal, incoming_dir);
-                // Simplified: assume light PDF is small, so BRDF sampling gets most weight
-                let light_pdf_estimate = 0.001; // Very small to favor BRDF sampling
-                let mis_weight = power_heuristic(brdf_pdf_val, light_pdf_estimate);
-                light += hit_info.emission * color * mis_weight;
-            } else {
-                // Primary rays see emission directly
-                light += hit_info.emission * color;
-            }
+        // NOTE we only do this for primary rays or specular bounces (because specular can't hit lights via direct sampling)
+        let is_primary_ray = (i == 0u);
+        let is_emissive = hit_info.emission.x + hit_info.emission.y + hit_info.emission.z > 0.01;
+        if ((is_primary_ray && is_emissive) || is_specular_bounce) {
+            // This represents BRDF sampling hitting a light
+            // We need to calculate what the light sampling PDF would have been
+            // For now, use a simplified approach - full emission for non-primary rays
+            let incoming_dir = -normalize(current_ray.direction);
+            let brdf_pdf_val = brdf_pdf(hit_info.normal, incoming_dir);
+            // Simplified: assume light PDF is small, so BRDF sampling gets most weight
+            let light_pdf_estimate = 0.001; // Very small to favor BRDF sampling
+            let mis_weight = power_heuristic(brdf_pdf_val, light_pdf_estimate);
+            light += hit_info.emission * color * mis_weight;
         }
         
         // Update color for next bounce
         color *= hit_info.color;
 
         // If color is too dark, stop tracing
+        // Note it's color here, not light - we only want to stop if the surface is very dark
         if (color.x + color.y + color.z < 0.01) {
             break;
         }
 
+        // Russian roulette termination
+        // After 3 bounces, probabilistically terminate the path to get performance boost while keeping it unbiased
+        if (i >= 3u) {
+            let luminance = luminance(color);
+            var p = clamp(luminance, 0.05, 0.95);
+
+            if (rand_f(state) > p) {
+                break; // kill path
+            }
+            color /= p; // keep unbiased
+        }
+
         // Continue with BRDF sampling for indirect lighting
+        is_specular_bounce = hit_info.specularProbability >= rand_f(state);
+
+        let diffuseDir = sample_cosine_hemisphere(hit_info.normal, state);
+        let specularDir = reflect(current_ray.direction, hit_info.normal);
+        let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, is_specular_bounce)));
+
         let new_origin = current_ray.origin + current_ray.direction * hit_info.t + hit_info.normal * 0.01;
-        var hitNormal = hit_info.normal;
-
-        let diffuseDir = sample_cosine_hemisphere(hitNormal, state);
-
-        let isSpecularBounce = hit_info.specularProbability >= rand_f(state);
-        let specularDir = reflect(current_ray.direction, hitNormal);
-
-        let new_direction = normalize(mix(diffuseDir, specularDir, select(0, hit_info.smoothness, isSpecularBounce)));
         current_ray = Ray(new_origin, new_direction);
     }
 

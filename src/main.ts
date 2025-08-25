@@ -1,7 +1,7 @@
-import { Scene } from './types.js';
+import {Scene} from './types.js';
 import * as Common from './common.js';
-import { FPSCounter } from './FPSCounter.js';
-import { RethrownError } from './common.js';
+import {RethrownError} from './common.js';
+import {FPSCounter} from './FPSCounter.js';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -24,6 +24,7 @@ class WebGPURenderer {
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
+    private debugEnabled: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -34,7 +35,8 @@ class WebGPURenderer {
 
     static async Create(
         canvas: HTMLCanvasElement,
-        fpsElement: HTMLElement
+        fpsElement: HTMLElement,
+        scenePath: string
     ): Promise<WebGPURenderer | null> {
         const renderer = new WebGPURenderer(canvas, fpsElement);
 
@@ -79,6 +81,18 @@ class WebGPURenderer {
                     'Failed to create pipelines',
                     error as Error
                 );
+            }
+
+            // Load scene
+            try {
+                renderer.currentScene = await fetch(scenePath).then((r) =>
+                    r.json()
+                );
+            } catch (error) {
+                Common.showError(
+                    'Failed to load scene.json: ' + (error as Error).message
+                );
+                throw error;
             }
 
             // Create scene buffers and bind groups
@@ -223,18 +237,8 @@ class WebGPURenderer {
             throw new Error('Raytracer compute pipeline not initialized');
         if (!this.accumulatorPipeline)
             throw new Error('Accumulator pipeline not initialized');
-
-        try {
-            const scene: Scene = await fetch('scene.json').then((r) =>
-                r.json()
-            );
-            this.currentScene = scene;
-        } catch (error) {
-            Common.showError(
-                'Failed to load scene.json: ' + (error as Error).message
-            );
-            throw error;
-        }
+        if (!this.currentScene)
+            throw new Error('Scene not loaded or initialized');
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
@@ -449,8 +453,7 @@ class WebGPURenderer {
 
         // samples: u32 (converted to f32 for buffer)
         uniformsData[uniformsOffset++] = this.samplesPerPixel;
-        // padding: f32 (4 bytes)
-        uniformsOffset++;
+        uniformsData[uniformsOffset++] = this.debugEnabled ? 1.0 : 0.0;
 
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
     }
@@ -520,32 +523,102 @@ class WebGPURenderer {
         };
         requestAnimationFrame(loop);
     }
+
+    setDebug(checked: boolean) {
+        this.debugEnabled = checked;
+    }
+
+    resetAccumulation() {
+        this.frameIndex = 0;
+        this.updateUniformsBuffer();
+    }
 }
 
-async function main(): Promise<void> {
+async function main(scenePath: string = 'scene.json'): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
+    const settingsElement = document.getElementById('settings');
+
     if (!canvas) {
         throw new Error('Canvas element not found');
     }
     if (!fpsElement) {
         throw new Error('FPS element not found');
     }
-
-    const renderer = await WebGPURenderer.Create(canvas, fpsElement);
-    if (renderer) {
-        // Wire up UI controls
-        const samplesInput = document.getElementById('samples') as HTMLInputElement;
-        
-        if (samplesInput) {
-            samplesInput.addEventListener('input', () => {
-                const samples = parseInt(samplesInput.value) || 1;
-                renderer.setSamplesPerPixel(samples);
-            });
-        }
-        
-        // Start rendering loop in the background
-        renderer.startRenderLoop();
+    if (!settingsElement) {
+        throw new Error('Settings element not found');
     }
+
+    const renderer = await WebGPURenderer.Create(canvas, fpsElement, scenePath);
+    if (!renderer) {
+        return;
+    }
+
+    // Create settings UI and wire up events
+    settingsElement.innerHTML = ''; // Clear existing content
+
+    // Add input for scene selection
+    const sceneDiv = document.createElement('div');
+    const sceneLabel = document.createElement('label');
+    sceneLabel.textContent = 'Scene: ';
+    const sceneSelect = document.createElement('select');
+    const scenes = {'Spheres': 'scene_spheres.json', 'Boxes': 'scene_boxes.json'};
+    for (const [sceneName, scenePath] of Object.entries(scenes)) {
+        const option = document.createElement('option');
+        option.value = scenePath;
+        option.textContent = sceneName;
+        sceneSelect.appendChild(option);
+    }
+    sceneSelect.onchange = (event) => {
+        const value = (event.target as HTMLSelectElement).value;
+        // For simplicity, we reload the entire renderer with the new scene
+        main(value); // Reload the main function to reset with new scene
+    };
+    sceneDiv.appendChild(sceneLabel);
+    sceneDiv.appendChild(sceneSelect);
+    settingsElement.appendChild(sceneDiv);
+
+    // Add input for samples per pixel
+    const samplesDiv = document.createElement('div');
+    const samplesLabel = document.createElement('label');
+    samplesLabel.textContent = 'Samples per pixel: ';
+    const samplesInput = document.createElement('input');
+    samplesInput.type = 'number';
+    samplesInput.min = '1';
+    samplesInput.max = '16';
+    samplesInput.value = '1';
+    samplesInput.oninput = (event) => {
+        const value = (event.target as HTMLInputElement).value;
+        const samples = parseInt(value) || 1;
+        renderer.setSamplesPerPixel(samples);
+    }
+    samplesDiv.appendChild(samplesLabel);
+    samplesDiv.appendChild(samplesInput);
+    settingsElement.appendChild(samplesDiv);
+
+    // Add a debug checkbox
+    const enableDebugDiv = document.createElement('div');
+    const enableDebugLabel = document.createElement('label');
+    enableDebugLabel.textContent = 'Enable Debug';
+    const enableDebugCheckbox = document.createElement('input');
+    enableDebugCheckbox.type = 'checkbox';
+    enableDebugCheckbox.onchange = (event) => {
+        const checked = (event.target as HTMLInputElement).checked;
+        renderer.setDebug(checked);
+    }
+    enableDebugDiv.appendChild(enableDebugCheckbox);
+    enableDebugDiv.appendChild(enableDebugLabel);
+    settingsElement.appendChild(enableDebugDiv);
+
+    // Reset accumulation button
+    const resetButton = document.createElement('button');
+    resetButton.textContent = 'Reset accumulation';
+    resetButton.onclick = () => {
+        renderer.resetAccumulation();
+    };
+    settingsElement.appendChild(resetButton);
+
+    // Start rendering loop in the background
+    renderer.startRenderLoop();
 }
-window.addEventListener('load', main);
+window.addEventListener('load', () => main());

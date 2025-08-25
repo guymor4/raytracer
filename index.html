@@ -45,9 +45,8 @@
 <body>
     <div id="debug">
         <div>FPS: <span id="fps">0</span></div>
-        <div style="margin-top: 10px;">
-            <label for="samples">Samples per pixel:</label>
-            <input type="number" id="samples" min="1" max="16" value="1" style="width: 50px; background: #333; color: #fff; border: 1px solid #555; padding: 2px;">
+        <div id="settings" style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+            <!-- Will be populated from javascript -->
         </div>
     </div>
     <canvas id="canvas" width="1536" height="864"></canvas>
