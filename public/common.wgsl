@@ -44,6 +44,7 @@ struct Uniforms {
     frameIndex: f32,
     resolution: vec2<f32>,
     samplesPerPixel: f32,
+    debugEnabled: f32
 }
 
 struct HitInfo {

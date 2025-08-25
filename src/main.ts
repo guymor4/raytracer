@@ -24,6 +24,7 @@ class WebGPURenderer {
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
+    private debugEnabled: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -449,8 +450,7 @@ class WebGPURenderer {
 
         // samples: u32 (converted to f32 for buffer)
         uniformsData[uniformsOffset++] = this.samplesPerPixel;
-        // padding: f32 (4 bytes)
-        uniformsOffset++;
+        uniformsData[uniformsOffset++] = this.debugEnabled ? 1.0 : 0.0;
 
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
     }
@@ -520,32 +520,82 @@ class WebGPURenderer {
         };
         requestAnimationFrame(loop);
     }
+
+    setDebug(checked: boolean) {
+        this.debugEnabled = checked;
+    }
+
+    resetAccumulation() {
+        this.frameIndex = 0;
+        this.updateUniformsBuffer();
+    }
 }
 
 async function main(): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
+    const settingsElement = document.getElementById('settings');
+
     if (!canvas) {
         throw new Error('Canvas element not found');
     }
     if (!fpsElement) {
         throw new Error('FPS element not found');
     }
+    if (!settingsElement) {
+        throw new Error('Settings element not found');
+    }
 
     const renderer = await WebGPURenderer.Create(canvas, fpsElement);
-    if (renderer) {
-        // Wire up UI controls
-        const samplesInput = document.getElementById('samples') as HTMLInputElement;
-        
-        if (samplesInput) {
-            samplesInput.addEventListener('input', () => {
-                const samples = parseInt(samplesInput.value) || 1;
-                renderer.setSamplesPerPixel(samples);
-            });
-        }
-        
-        // Start rendering loop in the background
-        renderer.startRenderLoop();
+    if (!renderer) {
+        return;
     }
+
+    // Create settings UI and wire up events
+    // Add input for samples per pixel
+    const samplesDiv = document.createElement('div');
+    const samplesLabel = document.createElement('label');
+    samplesLabel.htmlFor = 'samples';
+    samplesLabel.textContent = 'Samples per pixel: ';
+    const samplesInput = document.createElement('input');
+    samplesInput.type = 'number';
+    samplesInput.min = '1';
+    samplesInput.max = '16';
+    samplesInput.value = '1';
+    samplesInput.oninput = (event) => {
+        const value = (event.target as HTMLInputElement).value;
+        const samples = parseInt(value) || 1;
+        renderer.setSamplesPerPixel(samples);
+    }
+    samplesDiv.appendChild(samplesLabel);
+    samplesDiv.appendChild(samplesInput);
+    settingsElement.appendChild(samplesDiv);
+
+    // Add a debug checkbox
+    const enableDebugDiv = document.createElement('div');
+    const enableDebugLabel = document.createElement('label');
+    enableDebugLabel.htmlFor = 'enableDebug';
+    enableDebugLabel.textContent = 'Enable Debug';
+    const enableDebugCheckbox = document.createElement('input');
+    enableDebugCheckbox.type = 'checkbox';
+    enableDebugCheckbox.id = 'enableDebug';
+    enableDebugCheckbox.onchange = (event) => {
+        const checked = (event.target as HTMLInputElement).checked;
+        renderer.setDebug(checked);
+    }
+    enableDebugDiv.appendChild(enableDebugCheckbox);
+    enableDebugDiv.appendChild(enableDebugLabel);
+    settingsElement.appendChild(enableDebugDiv);
+
+    // Reset accumulation button
+    const resetButton = document.createElement('button');
+    resetButton.textContent = 'Reset accumulation';
+    resetButton.onclick = () => {
+        renderer.resetAccumulation();
+    };
+    settingsElement.appendChild(resetButton);
+
+    // Start rendering loop in the background
+    renderer.startRenderLoop();
 }
 window.addEventListener('load', main);
