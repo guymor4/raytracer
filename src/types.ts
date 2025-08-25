@@ -51,4 +51,5 @@ export interface BVHNode {
     leftChild: BVHNode | null;
     rightChild: BVHNode | null;
     isLeaf: boolean;
+    depth: number; // Depth of the node in the BVH tree (for debugging purposes)
 }

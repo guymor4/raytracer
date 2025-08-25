@@ -260,12 +260,19 @@ class WebGPURenderer {
                 module: debugShaderModule,
                 entryPoint: 'vs_main',
                 buffers: [{
-                    arrayStride: 12, // 3 floats * 4 bytes = 12 bytes
-                    attributes: [{
-                        format: 'float32x3',
-                        offset: 0,
-                        shaderLocation: 0,
-                    }]
+                    arrayStride: 24, // 6 floats * 4 bytes = 24 bytes (position + color)
+                    attributes: [
+                        {
+                            format: 'float32x3',
+                            offset: 0,
+                            shaderLocation: 0, // position
+                        },
+                        {
+                            format: 'float32x3',
+                            offset: 12,
+                            shaderLocation: 1, // color
+                        }
+                    ]
                 }]
             },
             fragment: {
@@ -300,8 +307,6 @@ class WebGPURenderer {
                 resource: { buffer: this.uniformsBuffer },
             }],
         });
-
-        console.log(`Debug buffers created: ${this.bvh.getWireframeVertexCount()} vertices`);
     }
 
     private async createBuffersAndBindGroups(): Promise<void> {
@@ -548,22 +553,9 @@ class WebGPURenderer {
     public getBVHInfo(): string {
         if (!this.bvh) return 'No BVH';
         
-        const root = this.bvh.getRoot();
-        if (!root) return 'BVH not initialized';
-        
-        const bbox = root.boundingBox;
-        const leftChild = root.leftChild;
-        const rightChild = root.rightChild;
-        
-        let info = `BVH Root: Box: (${bbox.min[0].toFixed(1)}, ${bbox.min[1].toFixed(1)}, ${bbox.min[2].toFixed(1)}) to (${bbox.max[0].toFixed(1)}, ${bbox.max[1].toFixed(1)}, ${bbox.max[2].toFixed(1)})`;
-        
-        if (leftChild && rightChild) {
-            const leftCount = leftChild.triangleIndices.length;
-            const rightCount = rightChild.triangleIndices.length;
-            info += ` | Split: L=${leftCount} R=${rightCount} triangles`;
-        }
-        
-        return info;
+        const stats = this.bvh.getBVHStats();
+        if (!stats) return 'No BVH stats';
+        return `BVH: Avg leaf triangles: ${(stats.totalTriangles / stats.leafNodes).toFixed(1)} | Total nodes: ${stats.totalNodes} | Max depth: ${stats.maxDepth}`;
     }
 
     private render(): void {
@@ -615,7 +607,7 @@ class WebGPURenderer {
         accumulatorPassEncoder.end();
 
         // Third pass: Debug wireframe rendering
-        if (this.debugPipeline && this.debugVertexBuffer && this.debugBindGroup && this.bvh) {
+        if (this.debugEnabled && this.debugPipeline && this.debugVertexBuffer && this.debugBindGroup && this.bvh) {
             const debugRenderPassDescriptor: GPURenderPassDescriptor = {
                 colorAttachments: [
                     {
@@ -632,7 +624,7 @@ class WebGPURenderer {
             debugPassEncoder.setPipeline(this.debugPipeline);
             debugPassEncoder.setVertexBuffer(0, this.debugVertexBuffer);
             debugPassEncoder.setBindGroup(0, this.debugBindGroup);
-            debugPassEncoder.draw(this.bvh.getWireframeVertexCount());
+            debugPassEncoder.draw(this.bvh.getWireframeVerticesCount());
             debugPassEncoder.end();
         }
 
