@@ -279,3 +279,22 @@ fn ray_triangle_normal_intersect(ray: Ray, tri: Triangle) -> HitInfo {
     let normalSphereCenter = triangleCenter + triangleNormal * 0.2;
     return ray_sphere_intersect(ray, Sphere(normalSphereCenter, 0.1, triangleNormal, 0.0, vec3<f32>(), 0.0, 0.0) );
 }
+
+fn luminance(color: vec3<f32>) -> f32 {
+    return dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+// Ray-AABB intersection test
+fn ray_aabb_intersect(ray: Ray, min_bounds: vec3<f32>, max_bounds: vec3<f32>) -> bool {
+    let inv_dir = 1.0 / ray.direction;
+    let t0s = (min_bounds - ray.origin) * inv_dir;
+    let t1s = (max_bounds - ray.origin) * inv_dir;
+
+    let tsmaller = min(t0s, t1s);
+    let tbigger = max(t0s, t1s);
+
+    let tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    let tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
+
+    return tmin <= tmax && tmax > 0.0;
+}

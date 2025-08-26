@@ -8,7 +8,6 @@ struct BVHNode {
     left_or_triangle_start: f32,  // leftChildIndex for internal nodes, triangleStart for leaves
     right_or_triangle_count: f32, // rightChildIndex for internal nodes, triangleCount for leaves
     is_leaf: f32,
-    padding: f32,
 }
 
 // Bindings for compute shader
@@ -18,25 +17,6 @@ struct BVHNode {
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(4) var<storage, read> bvh_nodes: array<BVHNode>;
 @group(0) @binding(5) var<storage, read> bvh_triangle_indices: array<u32>;
-
-fn luminance(color: vec3<f32>) -> f32 {
-    return dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
-}
-
-// Ray-AABB intersection test
-fn ray_aabb_intersect(ray: Ray, min_bounds: vec3<f32>, max_bounds: vec3<f32>) -> bool {
-    let inv_dir = 1.0 / ray.direction;
-    let t0s = (min_bounds - ray.origin) * inv_dir;
-    let t1s = (max_bounds - ray.origin) * inv_dir;
-    
-    let tsmaller = min(t0s, t1s);
-    let tbigger = max(t0s, t1s);
-    
-    let tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
-    let tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
-    
-    return tmin <= tmax && tmax > 0.0;
-}
 
 // BVH traversal for triangle intersections
 fn ray_bvh_triangles(ray: Ray) -> HitInfo {
@@ -56,14 +36,13 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
     while (stack_ptr > 0u) {
         stack_ptr--;
         let node_index = stack[stack_ptr];
-        
         if (node_index >= arrayLength(&bvh_nodes)) {
             continue;
         }
         
         let node = bvh_nodes[node_index];
         
-        // Test ray against bounding box
+        // Test ray against the bounding box
         if (!ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
             continue;
         }

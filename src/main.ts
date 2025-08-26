@@ -303,7 +303,7 @@ class WebGPURenderer {
             return;
 
         // Create vertex buffer for wireframe
-        const wireframeVertices = this.bvh.getWireframeVertices();
+        const wireframeVertices = this.bvh.buildWireframeVertices();
         this.debugVertexBuffer = this.device.createBuffer({
             size: wireframeVertices.byteLength,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -324,6 +324,33 @@ class WebGPURenderer {
                 },
             ],
         });
+    }
+
+    public updateDebugBuffers(newDepth: number): void {
+        if (
+            !this.device ||
+            !this.bvh ||
+            !this.debugPipeline ||
+            !this.debugVertexBuffer
+        )
+            throw new Error('Device or BVH or debug pipeline not initialized');
+
+        const wireframeVertices = this.bvh.buildWireframeVertices(newDepth);
+
+        // Overwrite existing buffer with new data
+        // If the new data is smaller than the old buffer, we can reuse it but it must be large enough
+        if (wireframeVertices.byteLength != this.debugVertexBuffer.size) {
+            this.debugVertexBuffer.destroy();
+            this.debugVertexBuffer = this.device.createBuffer({
+                size: wireframeVertices.byteLength,
+                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            });
+        }
+        this.device.queue.writeBuffer(
+            this.debugVertexBuffer,
+            0,
+            wireframeVertices
+        );
     }
 
     private async createBuffersAndBindGroups(): Promise<void> {
@@ -800,6 +827,26 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
     enableDebugDiv.appendChild(enableDebugCheckbox);
     enableDebugDiv.appendChild(enableDebugLabel);
     settingsElement.appendChild(enableDebugDiv);
+
+    // Add input for BVH depth visibility
+    const bvhDepthDiv = document.createElement('div');
+    const bvhDepthLabel = document.createElement('label');
+    bvhDepthLabel.textContent = 'BVH Depth: ';
+    const bvhDepthInput = document.createElement('input');
+    bvhDepthInput.type = 'number';
+    bvhDepthInput.min = '1';
+    bvhDepthInput.max = '32';
+    bvhDepthInput.value = '1';
+    bvhDepthInput.oninput = (event) => {
+        const value = (event.target as HTMLInputElement).value;
+        const depth = parseInt(value) || 1;
+        if (renderer['bvh']) {
+            renderer.updateDebugBuffers(depth);
+        }
+    };
+    bvhDepthDiv.appendChild(bvhDepthLabel);
+    bvhDepthDiv.appendChild(bvhDepthInput);
+    settingsElement.appendChild(bvhDepthDiv);
 
     // Reset accumulation button
     const resetButton = document.createElement('button');

@@ -296,7 +296,7 @@ export class BVH {
     }
 
     // Generate wireframe vertices for all leaf bounding box edges
-    public getWireframeVertices(maxDepth: number = -1): Float32Array {
+    public buildWireframeVertices(depthFilter: number = -1): Float32Array {
         if (!this.root) return new Float32Array(0);
 
         const allVertices: { position: Vec3; color: Vec3 }[] = [];
@@ -306,23 +306,38 @@ export class BVH {
 
         while (nodesToVisit.length > 0) {
             const currentNode = nodesToVisit.pop()!;
-            if (maxDepth >= 0 && currentNode.depth > maxDepth) {
-                continue; // Skip nodes deeper than maxDepth
-            }
 
             const vertices = this.generateBoundingBoxVertices(
                 currentNode.boundingBox
             );
-            allVertices.push(
-                ...vertices.map((vertex) => ({
-                    position: vertex,
-                    color: [
-                        currentNode.depth / (this.stats?.maxDepth ?? 4),
-                        0,
-                        0,
-                    ] as Vec3, // White color for bounding box edges
-                }))
-            );
+            if (depthFilter < 0 || currentNode.depth === depthFilter) {
+                for (const vertex of vertices) {
+                    // Color gradient based on depth: from dark red to bright yellow to green
+                    const depthFactor = Math.min(
+                        currentNode.depth /
+                            (this.stats?.maxDepth ? this.stats.maxDepth : 10),
+                        1
+                    );
+                    const color: Vec3 =
+                        depthFactor < 0.5
+                            ? [
+                                  1.0,
+                                  depthFactor * 2, // From 0 to 1
+                                  0.0,
+                              ] // Red to Yellow
+                            : [
+                                  1.0 - (depthFactor - 0.5) * 2, // From 1 to 0
+                                  1.0,
+                                  0.0,
+                              ]; // Yellow to Green
+
+                    // Color based on depth (deeper nodes are darker)
+                    allVertices.push({
+                        position: vertex,
+                        color: color, // Color gradient based on depth
+                    });
+                }
+            }
 
             if (!currentNode.isLeaf) {
                 if (currentNode.leftChild) {
@@ -362,12 +377,10 @@ export class BVH {
             [min[0], max[1], max[2]], // 7: +Y +Z
         ];
 
-        // Scale up the box slightly to avoid z-fighting
-        const scale = 1.01;
         for (let i = 0; i < corners.length; i++) {
-            corners[i][0] = min[0] + (corners[i][0] - min[0]) * scale;
-            corners[i][1] = min[1] + (corners[i][1] - min[1]) * scale;
-            corners[i][2] = min[2] + (corners[i][2] - min[2]) * scale;
+            corners[i][0] = min[0] + (corners[i][0] - min[0]);
+            corners[i][1] = min[1] + (corners[i][1] - min[1]);
+            corners[i][2] = min[2] + (corners[i][2] - min[2]);
         }
 
         // Define the 12 edges of a cube (each edge as two vertex indices)
