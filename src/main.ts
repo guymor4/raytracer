@@ -532,7 +532,7 @@ class WebGPURenderer {
     }
 }
 
-async function main(scenePath: string = 'scene.json'): Promise<void> {
+async function main(scenePath: string = 'scene_spheres.json'): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
     const settingsElement = document.getElementById('settings');

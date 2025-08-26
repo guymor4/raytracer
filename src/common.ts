@@ -110,7 +110,7 @@ export async function loadScene(scenePath: string): Promise<Scene> {
     const scene: RawScene= await response.json();
 
     // If triangles is a string, treat it as a path to an OBJ file
-    for (const model of scene.models) {
+    for (const model of scene.models ?? []) {
         if (model.path) {
             try {
                 const objData = await loadOBJ(model.path);
