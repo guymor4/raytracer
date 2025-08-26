@@ -377,4 +377,94 @@ export class BVH {
     getWireframeVerticesCount() {
         return this.wireframeVerticesCount;
     }
+
+    // Serialize BVH to linear arrays for GPU
+    public serializeBVH(): {
+        nodes: Float32Array;
+        triangleIndices: Uint32Array;
+    } {
+        if (!this.root) {
+            return {
+                nodes: new Float32Array(0),
+                triangleIndices: new Uint32Array(0)
+            };
+        }
+
+        const nodeList: BVHNode[] = [];
+        const triangleIndexList: number[] = [];
+        
+        // Flatten tree into linear array using depth-first traversal
+        this.flattenBVH(this.root, nodeList, triangleIndexList);
+        
+        // Convert to GPU-friendly format
+        // Each node: [minX, minY, minZ, padding, maxX, maxY, maxZ, leftChild/triangleStart, rightChild/triangleCount, isLeaf, padding, padding]
+        const nodes = new Float32Array(nodeList.length * 12);
+
+        let offset = 0;
+        for (let i = 0; i < nodeList.length; i++) {
+            const node = nodeList[i];
+
+            // Bounding box
+            nodes[offset++] = node.boundingBox.min[0];
+            nodes[offset++] = node.boundingBox.min[1];
+            nodes[offset++] = node.boundingBox.min[2];
+            nodes[offset++] = 0.0; // padding
+            nodes[offset++] = node.boundingBox.max[0];
+            nodes[offset++] = node.boundingBox.max[1];
+            nodes[offset++] = node.boundingBox.max[2];
+            // nodes[offset++] = 0.0; // padding
+
+            if (node.isLeaf) {
+                // For leaf nodes: triangleStart, triangleCount
+                const triangleStart = (node as any).triangleStart || 0;
+                const triangleCount = node.triangleIndices.length;
+                nodes[offset++] = triangleStart;
+                nodes[offset++] = triangleCount;
+                nodes[offset++] = 1.0; // isLeaf = true
+            } else {
+                // For internal nodes: leftChildIndex, rightChildIndex
+                const leftIndex = (node as any).leftIndex || -1;
+                const rightIndex = (node as any).rightIndex || -1;
+                nodes[offset++] = leftIndex;
+                nodes[offset++] = rightIndex;
+                nodes[offset++] = 0.0; // isLeaf = false
+            }
+            nodes[offset++] = 0.0; // padding
+            nodes[offset++] = 0.0; // padding
+        }
+
+        return {
+            nodes,
+            triangleIndices: new Uint32Array(triangleIndexList)
+        };
+    }
+
+    private flattenBVH(
+        node: BVHNode,
+        nodeList: BVHNode[],
+        triangleIndexList: number[]
+    ): number {
+        const currentIndex = nodeList.length;
+        nodeList.push(node);
+        
+        if (node.isLeaf) {
+            // Store triangle indices and set triangle start
+            (node as any).triangleStart = triangleIndexList.length;
+            for (const triIndex of node.triangleIndices) {
+                triangleIndexList.push(triIndex);
+            }
+        } else {
+            // Process children and store their indices
+            if (node.leftChild) {
+                const leftIndex = this.flattenBVH(node.leftChild, nodeList, triangleIndexList);
+                (node as any).leftIndex = leftIndex;
+            }
+            if (node.rightChild) {
+                const rightIndex = this.flattenBVH(node.rightChild, nodeList, triangleIndexList);
+                (node as any).rightIndex = rightIndex;
+            }
+        }
+        
+        return currentIndex;
+    }
 }

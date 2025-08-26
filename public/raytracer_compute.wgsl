@@ -1,14 +1,108 @@
 // Compute raytracer - outputs to intermediate texture for accumulation
 // common.wgsl is included separately and concatenated
 
+// BVH Node structure
+struct BVHNode {
+    min_bounds: vec3<f32>,
+    max_bounds: vec3<f32>,
+    left_or_triangle_start: f32,  // leftChildIndex for internal nodes, triangleStart for leaves
+    right_or_triangle_count: f32, // rightChildIndex for internal nodes, triangleCount for leaves
+    is_leaf: f32,
+}
+
 // Bindings for compute shader
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var<storage, read> bvh_nodes: array<BVHNode>;
+@group(0) @binding(5) var<storage, read> bvh_triangle_indices: array<u32>;
 
 fn luminance(color: vec3<f32>) -> f32 {
     return dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+// Ray-AABB intersection test
+fn ray_aabb_intersect(ray: Ray, min_bounds: vec3<f32>, max_bounds: vec3<f32>) -> bool {
+    let inv_dir = 1.0 / ray.direction;
+    let t0s = (min_bounds - ray.origin) * inv_dir;
+    let t1s = (max_bounds - ray.origin) * inv_dir;
+    
+    let tsmaller = min(t0s, t1s);
+    let tbigger = max(t0s, t1s);
+    
+    let tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    let tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
+    
+    return tmin < tmax && tmax > 0.001;
+}
+
+// BVH traversal for triangle intersections
+fn ray_bvh_triangles(ray: Ray) -> HitInfo {
+    var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
+    
+    if (arrayLength(&bvh_nodes) == 0u) {
+        return closest_hit;
+    }
+    
+    // Stack for BVH traversal (max depth typical ~20-30)
+    var stack: array<u32, 3>;
+    var stack_ptr = 0u;
+    stack[0] = 0u; // Start with root node
+    stack_ptr = 1u;
+    
+    while (stack_ptr > 0u && stack_ptr < 3u) {
+        stack_ptr--;
+        let node_index = stack[stack_ptr];
+        
+        if (node_index >= arrayLength(&bvh_nodes)) {
+            continue;
+        }
+        
+        let node = bvh_nodes[node_index];
+        
+        // Test ray against bounding box
+        if (!ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
+            continue;
+        }
+        
+        if (node.is_leaf > 0.5) {
+            // Leaf node - test triangles
+            let triangle_start = u32(node.left_or_triangle_start);
+            let triangle_count = u32(node.right_or_triangle_count);
+            
+            for (var i = 0u; i < triangle_count; i++) {
+                if (triangle_start + i >= arrayLength(&bvh_triangle_indices)) {
+                    break;
+                }
+                let triangle_index = bvh_triangle_indices[triangle_start + i];
+                
+                if (triangle_index >= arrayLength(&triangles)) {
+                    continue;
+                }
+                
+                let hit_info = ray_triangle_intersect(ray, triangles[triangle_index]);
+                if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
+                    closest_hit = hit_info;
+                }
+            }
+        } else {
+            // Internal node - add children to stack
+            let left_child = u32(node.left_or_triangle_start);
+            let right_child = u32(node.right_or_triangle_count);
+            
+            if (left_child < arrayLength(&bvh_nodes) && stack_ptr < 63u) {
+                stack[stack_ptr] = left_child;
+                stack_ptr++;
+            }
+            if (right_child < arrayLength(&bvh_nodes) && stack_ptr < 63u) {
+                stack[stack_ptr] = right_child;
+                stack_ptr++;
+            }
+        }
+    }
+    
+    return closest_hit;
 }
 
 fn ray_all(ray: Ray) -> HitInfo {
@@ -22,12 +116,10 @@ fn ray_all(ray: Ray) -> HitInfo {
        }
    }
 
-   // Check triangle intersections
-   for (var i = 0u; i < arrayLength(&triangles); i++) {
-       let hit_info = ray_triangle_intersect(ray, triangles[i]);
-       if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
-           closest_hit = hit_info;
-       }
+   // Check triangle intersections using BVH
+   let triangle_hit = ray_bvh_triangles(ray);
+   if (triangle_hit.t > 0.0 && (closest_hit.t < 0 || triangle_hit.t < closest_hit.t)) {
+       closest_hit = triangle_hit;
    }
 
     return closest_hit;
@@ -329,7 +421,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     for (var i = 0u; i < u32(uniforms.samplesPerPixel); i++) {
         totalColor += ray_trace(ray, maxBounceCount, &state);
     }
-    let color = totalColor / f32(uniforms.samplesPerPixel);
+    var color = totalColor / f32(uniforms.samplesPerPixel);
+
+//    let node = bvh_nodes[2];
+//    if (ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
+//        color += vec3<f32>(0, 1, 0);
+//    } else {
+//        // If we hit nothing, add sky color
+//        color += vec3<f32>(1, 0, 0);
+//    }
 
     // Write to intermediate texture
     textureStore(intermediate_texture, pixel_coords, vec4<f32>(color, 1.0));

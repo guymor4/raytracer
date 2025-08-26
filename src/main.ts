@@ -1,9 +1,8 @@
 import {Scene} from './types.js';
 import * as Common from './common.js';
-import { FPSCounter } from './FPSCounter.js';
-import { RethrownError } from './common.js';
-import { BVH } from './BVH.js';
-import { Mat4 } from './math.js';
+import {RethrownError} from './common.js';
+import {FPSCounter} from './FPSCounter.js';
+import {BVH} from './BVH.js';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -15,6 +14,8 @@ class WebGPURenderer {
     private spheresBuffer: GPUBuffer | null = null;
     private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
+    private bvhNodesBuffer: GPUBuffer | null = null;
+    private bvhTriangleIndicesBuffer: GPUBuffer | null = null;
     private raytracerComputeBindGroup: GPUBindGroup | null = null;
     private accumulatorBindGroup: GPUBindGroup | null = null;
     private intermediateTexture: GPUTexture | null = null;
@@ -27,7 +28,7 @@ class WebGPURenderer {
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
     private bvh: BVH | null = null;
-    
+
     // Debug rendering
     private debugPipeline: GPURenderPipeline | null = null;
     private debugVertexBuffer: GPUBuffer | null = null;
@@ -35,7 +36,7 @@ class WebGPURenderer {
     private debugEnabled: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
-        this.resolution = { width: canvas.width, height: canvas.height };
+        this.resolution = {width: canvas.width, height: canvas.height};
 
         this.canvas = canvas;
         this.fpsCounter = new FPSCounter(fpsElement);
@@ -95,7 +96,12 @@ class WebGPURenderer {
             try {
                 renderer.currentScene = await fetch(scenePath).then((r) =>
                     r.json()
-                );
+                ) as Scene;
+
+                // Create BVH for triangles
+                console.log('Creating BVH...');
+                renderer.bvh = new BVH(renderer.currentScene.triangles);
+                console.log('BVH created successfully', renderer.bvh);
             } catch (error) {
                 Common.showError(
                     'Failed to load scene.json: ' + (error as Error).message
@@ -304,7 +310,7 @@ class WebGPURenderer {
             layout: this.debugPipeline.getBindGroupLayout(0),
             entries: [{
                 binding: 0,
-                resource: { buffer: this.uniformsBuffer },
+                resource: {buffer: this.uniformsBuffer},
             }],
         });
     }
@@ -317,6 +323,8 @@ class WebGPURenderer {
             throw new Error('Accumulator pipeline not initialized');
         if (!this.currentScene)
             throw new Error('Scene not loaded or initialized');
+        if (!this.bvh)
+            throw new Error('Device not initialized');
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
@@ -434,6 +442,39 @@ class WebGPURenderer {
             );
         }
 
+        // Create BVH buffers
+        const bvhData = this.bvh.serializeBVH();
+
+        // BVH nodes buffer
+        const bvhNodesSize = bvhData.nodes.byteLength || 64; // Minimum size
+        this.bvhNodesBuffer = this.device.createBuffer({
+            size: bvhNodesSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        if (bvhData.nodes.length > 0) {
+            this.device.queue.writeBuffer(
+                this.bvhNodesBuffer,
+                0,
+                bvhData.nodes
+            );
+        }
+
+        // BVH triangle indices buffer
+        const bvhIndicesSize = bvhData.triangleIndices.byteLength || 4; // Minimum size
+        this.bvhTriangleIndicesBuffer = this.device.createBuffer({
+            size: bvhIndicesSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        if (bvhData.triangleIndices.length > 0) {
+            this.device.queue.writeBuffer(
+                this.bvhTriangleIndicesBuffer,
+                0,
+                bvhData.triangleIndices
+            );
+        }
+
         try {
             // Create raytracer compute bind group using pipeline's layout
             this.raytracerComputeBindGroup = this.device.createBindGroup({
@@ -441,19 +482,27 @@ class WebGPURenderer {
                 entries: [
                     {
                         binding: 0,
-                        resource: { buffer: this.uniformsBuffer },
+                        resource: {buffer: this.uniformsBuffer},
                     },
                     {
                         binding: 1,
-                        resource: { buffer: this.spheresBuffer },
+                        resource: {buffer: this.spheresBuffer},
                     },
                     {
                         binding: 2,
-                        resource: { buffer: this.trianglesBuffer },
+                        resource: {buffer: this.trianglesBuffer},
                     },
                     {
                         binding: 3,
                         resource: this.intermediateTexture!.createView(),
+                    },
+                    {
+                        binding: 4,
+                        resource: {buffer: this.bvhNodesBuffer!},
+                    },
+                    {
+                        binding: 5,
+                        resource: {buffer: this.bvhTriangleIndicesBuffer!},
                     },
                 ],
             });
@@ -464,7 +513,7 @@ class WebGPURenderer {
                 entries: [
                     {
                         binding: 0,
-                        resource: { buffer: this.uniformsBuffer },
+                        resource: {buffer: this.uniformsBuffer},
                     },
                     {
                         binding: 1,
@@ -494,11 +543,6 @@ class WebGPURenderer {
             );
             return;
         }
-
-        // Create BVH for triangles
-        console.log('Creating BVH...');
-        this.bvh = new BVH(this.currentScene.triangles);
-        console.log('BVH created successfully');
 
         // Create debug rendering pipeline and buffers
         await this.createDebugPipeline();
@@ -552,7 +596,7 @@ class WebGPURenderer {
 
     public getBVHInfo(): string {
         if (!this.bvh) return 'No BVH';
-        
+
         const stats = this.bvh.getBVHStats();
         if (!stats) return 'No BVH stats';
         return `BVH: Avg leaf triangles: ${(stats.totalTriangles / stats.leafNodes).toFixed(1)} | Total nodes: ${stats.totalNodes} | Max depth: ${stats.maxDepth}`;
@@ -575,12 +619,12 @@ class WebGPURenderer {
         this.updateUniformsBuffer();
 
         const commandEncoder = this.device.createCommandEncoder();
-        
+
         // First pass: Compute raytracing to intermediate texture
         const computePass = commandEncoder.beginComputePass();
         computePass.setPipeline(this.raytracerComputePipeline);
         computePass.setBindGroup(0, this.raytracerComputeBindGroup);
-        
+
         // Calculate dispatch size (8x8 workgroup size)
         const dispatchX = Math.ceil(this.resolution.width / 8);
         const dispatchY = Math.ceil(this.resolution.height / 8);
@@ -592,7 +636,7 @@ class WebGPURenderer {
             colorAttachments: [
                 {
                     view: this.context.getCurrentTexture().createView(),
-                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                    clearValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
                     loadOp: 'clear',
                     storeOp: 'store',
                 },
@@ -612,14 +656,14 @@ class WebGPURenderer {
                 colorAttachments: [
                     {
                         view: this.context.getCurrentTexture().createView(),
-                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                        clearValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
                         loadOp: 'load', // Don't clear, draw over the accumulation result
                         storeOp: 'store',
                     },
                 ],
                 depthStencilAttachment: undefined,
             };
-            
+
             const debugPassEncoder = commandEncoder.beginRenderPass(debugRenderPassDescriptor);
             debugPassEncoder.setPipeline(this.debugPipeline);
             debugPassEncoder.setVertexBuffer(0, this.debugVertexBuffer);
@@ -743,4 +787,5 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
     // Start rendering loop in the background
     renderer.startRenderLoop();
 }
+
 window.addEventListener('load', () => main());
