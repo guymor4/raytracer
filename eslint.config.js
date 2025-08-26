@@ -42,6 +42,12 @@ export default [
         GPUTextureUsage: 'readonly',
         GPUBufferUsage: 'readonly',
         GPURenderPassDescriptor: 'readonly',
+        GPUCommandEncoder: 'readonly',
+        intermediateTexture: 'readonly',
+        GPUComputePipeline: 'readonly',
+        HTMLSelectElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLDivElement: 'readonly',
       },
     },
     rules: {

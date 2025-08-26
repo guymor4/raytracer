@@ -1,8 +1,8 @@
-import {Scene} from './types.js';
+import { Scene } from './types.js';
 import * as Common from './common.js';
-import {RethrownError} from './common.js';
-import {FPSCounter} from './FPSCounter.js';
-import {BVH} from './BVH.js';
+import { RethrownError } from './common.js';
+import { FPSCounter } from './FPSCounter.js';
+import { BVH } from './BVH.js';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -36,7 +36,7 @@ class WebGPURenderer {
     private debugEnabled: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
-        this.resolution = {width: canvas.width, height: canvas.height};
+        this.resolution = { width: canvas.width, height: canvas.height };
 
         this.canvas = canvas;
         this.fpsCounter = new FPSCounter(fpsElement);
@@ -73,17 +73,14 @@ class WebGPURenderer {
 
             // Create GPU textures
             renderer.createTextures();
-            if (!renderer.intermediateTexture) {
-                throw new Error('Intermediate texture not initialized');
-            }
 
             // Create pipelines
             try {
                 const pipelines = await renderer.createPipelines(
-                    renderer.device,
-                    renderer.intermediateTexture
+                    renderer.device
                 );
-                renderer.raytracerComputePipeline = pipelines.raytracerComputePipeline;
+                renderer.raytracerComputePipeline =
+                    pipelines.raytracerComputePipeline;
                 renderer.accumulatorPipeline = pipelines.accumulatorPipeline;
             } catch (error) {
                 throw new RethrownError(
@@ -94,9 +91,9 @@ class WebGPURenderer {
 
             // Load scene
             try {
-                renderer.currentScene = await fetch(scenePath).then((r) =>
+                renderer.currentScene = (await fetch(scenePath).then((r) =>
                     r.json()
-                ) as Scene;
+                )) as Scene;
 
                 // Create BVH for triangles
                 console.log('Creating BVH...');
@@ -164,21 +161,20 @@ class WebGPURenderer {
         });
     }
 
-    private async createPipelines(
-        device: GPUDevice,
-        intermediateTexture: GPUTexture
-    ): Promise<{
+    private async createPipelines(device: GPUDevice): Promise<{
         raytracerComputePipeline: GPUComputePipeline;
         accumulatorPipeline: GPURenderPipeline;
     }> {
-        const [commonCode, raytracerComputeCode, accumulatorCode] = await Promise.all([
-            fetch('common.wgsl').then((r) => r.text()),
-            fetch('raytracer_compute.wgsl').then((r) => r.text()),
-            fetch('accumulator.wgsl').then((r) => r.text()),
-        ]);
+        const [commonCode, raytracerComputeCode, accumulatorCode] =
+            await Promise.all([
+                fetch('common.wgsl').then((r) => r.text()),
+                fetch('raytracer_compute.wgsl').then((r) => r.text()),
+                fetch('accumulator.wgsl').then((r) => r.text()),
+            ]);
 
         // Combine common utilities with shaders
-        const fullRaytracerComputeCode = commonCode + '\n' + raytracerComputeCode;
+        const fullRaytracerComputeCode =
+            commonCode + '\n' + raytracerComputeCode;
         const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
 
         const raytracerComputeShaderModule = device.createShaderModule({
@@ -255,7 +251,6 @@ class WebGPURenderer {
         // Combine common utilities with shaders
         const fullDebugShaderCode = commonCode + '\n' + debugShaderCode;
 
-
         const debugShaderModule = this.device.createShaderModule({
             code: fullDebugShaderCode,
         });
@@ -265,28 +260,32 @@ class WebGPURenderer {
             vertex: {
                 module: debugShaderModule,
                 entryPoint: 'vs_main',
-                buffers: [{
-                    arrayStride: 24, // 6 floats * 4 bytes = 24 bytes (position + color)
-                    attributes: [
-                        {
-                            format: 'float32x3',
-                            offset: 0,
-                            shaderLocation: 0, // position
-                        },
-                        {
-                            format: 'float32x3',
-                            offset: 12,
-                            shaderLocation: 1, // color
-                        }
-                    ]
-                }]
+                buffers: [
+                    {
+                        arrayStride: 24, // 6 floats * 4 bytes = 24 bytes (position + color)
+                        attributes: [
+                            {
+                                format: 'float32x3',
+                                offset: 0,
+                                shaderLocation: 0, // position
+                            },
+                            {
+                                format: 'float32x3',
+                                offset: 12,
+                                shaderLocation: 1, // color
+                            },
+                        ],
+                    },
+                ],
             },
             fragment: {
                 module: debugShaderModule,
                 entryPoint: 'fs_main',
-                targets: [{
-                    format: navigator.gpu.getPreferredCanvasFormat(),
-                }],
+                targets: [
+                    {
+                        format: navigator.gpu.getPreferredCanvasFormat(),
+                    },
+                ],
             },
             primitive: {
                 topology: 'line-list',
@@ -295,7 +294,13 @@ class WebGPURenderer {
     }
 
     private createDebugBuffers(): void {
-        if (!this.device || !this.bvh || !this.debugPipeline || !this.uniformsBuffer) return;
+        if (
+            !this.device ||
+            !this.bvh ||
+            !this.debugPipeline ||
+            !this.uniformsBuffer
+        )
+            return;
 
         // Create vertex buffer for wireframe
         const wireframeVertices = this.bvh.getWireframeVertices();
@@ -303,15 +308,21 @@ class WebGPURenderer {
             size: wireframeVertices.byteLength,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
-        this.device.queue.writeBuffer(this.debugVertexBuffer, 0, wireframeVertices);
+        this.device.queue.writeBuffer(
+            this.debugVertexBuffer,
+            0,
+            wireframeVertices
+        );
 
         // Create bind group for debug rendering
         this.debugBindGroup = this.device.createBindGroup({
             layout: this.debugPipeline.getBindGroupLayout(0),
-            entries: [{
-                binding: 0,
-                resource: {buffer: this.uniformsBuffer},
-            }],
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: this.uniformsBuffer },
+                },
+            ],
         });
     }
 
@@ -323,8 +334,17 @@ class WebGPURenderer {
             throw new Error('Accumulator pipeline not initialized');
         if (!this.currentScene)
             throw new Error('Scene not loaded or initialized');
-        if (!this.bvh)
-            throw new Error('Device not initialized');
+        if (!this.bvh) throw new Error('Device not initialized');
+        if (!this.intermediateTexture)
+            throw new Error('Intermediate texture not initialized');
+        if (
+            !this.accumulationTextureR ||
+            !this.accumulationTextureG ||
+            !this.accumulationTextureB
+        )
+            throw new Error('Accumulation textures not initialized');
+        if (!this.textureSampler)
+            throw new Error('Texture sampler not initialized');
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
@@ -444,6 +464,9 @@ class WebGPURenderer {
 
         // Create BVH buffers
         const bvhData = this.bvh.serializeBVH();
+        console.log(
+            `BVH: ${bvhData.nodes.length / 10} nodes, ${bvhData.triangleIndices.length} triangle indices`
+        );
 
         // BVH nodes buffer
         const bvhNodesSize = bvhData.nodes.byteLength || 64; // Minimum size
@@ -478,62 +501,62 @@ class WebGPURenderer {
         try {
             // Create raytracer compute bind group using pipeline's layout
             this.raytracerComputeBindGroup = this.device.createBindGroup({
-                layout: this.raytracerComputePipeline!.getBindGroupLayout(0),
+                layout: this.raytracerComputePipeline.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
-                        resource: {buffer: this.uniformsBuffer},
+                        resource: { buffer: this.uniformsBuffer },
                     },
                     {
                         binding: 1,
-                        resource: {buffer: this.spheresBuffer},
+                        resource: { buffer: this.spheresBuffer },
                     },
                     {
                         binding: 2,
-                        resource: {buffer: this.trianglesBuffer},
+                        resource: { buffer: this.trianglesBuffer },
                     },
                     {
                         binding: 3,
-                        resource: this.intermediateTexture!.createView(),
+                        resource: this.intermediateTexture.createView(),
                     },
                     {
                         binding: 4,
-                        resource: {buffer: this.bvhNodesBuffer!},
+                        resource: { buffer: this.bvhNodesBuffer },
                     },
                     {
                         binding: 5,
-                        resource: {buffer: this.bvhTriangleIndicesBuffer!},
+                        resource: { buffer: this.bvhTriangleIndicesBuffer },
                     },
                 ],
             });
 
             // Create accumulator bind group using pipeline's layout
             this.accumulatorBindGroup = this.device.createBindGroup({
-                layout: this.accumulatorPipeline!.getBindGroupLayout(0),
+                layout: this.accumulatorPipeline.getBindGroupLayout(0),
                 entries: [
                     {
                         binding: 0,
-                        resource: {buffer: this.uniformsBuffer},
+                        resource: { buffer: this.uniformsBuffer },
                     },
                     {
                         binding: 1,
-                        resource: this.intermediateTexture!.createView(),
+                        resource: this.intermediateTexture.createView(),
                     },
                     {
                         binding: 2,
-                        resource: this.textureSampler!,
+                        resource: this.textureSampler,
                     },
                     {
                         binding: 3,
-                        resource: this.accumulationTextureR!.createView(),
+                        resource: this.accumulationTextureR.createView(),
                     },
                     {
                         binding: 4,
-                        resource: this.accumulationTextureG!.createView(),
+                        resource: this.accumulationTextureG.createView(),
                     },
                     {
                         binding: 5,
-                        resource: this.accumulationTextureB!.createView(),
+                        resource: this.accumulationTextureB.createView(),
                     },
                 ],
             });
@@ -636,7 +659,7 @@ class WebGPURenderer {
             colorAttachments: [
                 {
                     view: this.context.getCurrentTexture().createView(),
-                    clearValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
+                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store',
                 },
@@ -651,12 +674,18 @@ class WebGPURenderer {
         accumulatorPassEncoder.end();
 
         // Third pass: Debug wireframe rendering
-        if (this.debugEnabled && this.debugPipeline && this.debugVertexBuffer && this.debugBindGroup && this.bvh) {
+        if (
+            this.debugEnabled &&
+            this.debugPipeline &&
+            this.debugVertexBuffer &&
+            this.debugBindGroup &&
+            this.bvh
+        ) {
             const debugRenderPassDescriptor: GPURenderPassDescriptor = {
                 colorAttachments: [
                     {
                         view: this.context.getCurrentTexture().createView(),
-                        clearValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
+                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
                         loadOp: 'load', // Don't clear, draw over the accumulation result
                         storeOp: 'store',
                     },
@@ -664,7 +693,9 @@ class WebGPURenderer {
                 depthStencilAttachment: undefined,
             };
 
-            const debugPassEncoder = commandEncoder.beginRenderPass(debugRenderPassDescriptor);
+            const debugPassEncoder = commandEncoder.beginRenderPass(
+                debugRenderPassDescriptor
+            );
             debugPassEncoder.setPipeline(this.debugPipeline);
             debugPassEncoder.setVertexBuffer(0, this.debugVertexBuffer);
             debugPassEncoder.setBindGroup(0, this.debugBindGroup);
@@ -722,7 +753,7 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
     const sceneLabel = document.createElement('label');
     sceneLabel.textContent = 'Scene: ';
     const sceneSelect = document.createElement('select');
-    const scenes = {'Spheres': 'scene_spheres.json', 'Boxes': 'scene_boxes.json'};
+    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json' };
     for (const [sceneName, scenePath] of Object.entries(scenes)) {
         const option = document.createElement('option');
         option.value = scenePath;
@@ -751,7 +782,7 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
         const value = (event.target as HTMLInputElement).value;
         const samples = parseInt(value) || 1;
         renderer.setSamplesPerPixel(samples);
-    }
+    };
     samplesDiv.appendChild(samplesLabel);
     samplesDiv.appendChild(samplesInput);
     settingsElement.appendChild(samplesDiv);
@@ -765,7 +796,7 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
     enableDebugCheckbox.onchange = (event) => {
         const checked = (event.target as HTMLInputElement).checked;
         renderer.setDebug(checked);
-    }
+    };
     enableDebugDiv.appendChild(enableDebugCheckbox);
     enableDebugDiv.appendChild(enableDebugLabel);
     settingsElement.appendChild(enableDebugDiv);

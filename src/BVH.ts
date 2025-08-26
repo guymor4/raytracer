@@ -4,9 +4,15 @@ export class BVH {
     private root: BVHNode | null = null;
     private triangles: Triangle[] = [];
 
-    private stats: { leafNodes: number; totalTriangles: number; totalNodes: number; maxDepth: number; } | undefined;
+    private stats:
+        | {
+              leafNodes: number;
+              totalTriangles: number;
+              totalNodes: number;
+              maxDepth: number;
+          }
+        | undefined;
     private wireframeVerticesCount: number = 0;
-
 
     constructor(triangles: Triangle[]) {
         this.triangles = triangles;
@@ -21,11 +27,14 @@ export class BVH {
         if (this.triangles.length === 0) return;
 
         // Create indices for all triangles
-        const triangleIndices = Array.from({ length: this.triangles.length }, (_, i) => i);
-        
+        const triangleIndices = Array.from(
+            { length: this.triangles.length },
+            (_, i) => i
+        );
+
         // Calculate bounding box for all triangles
         const sceneBoundingBox = this.calculateSceneBoundingBox();
-        
+
         // Create root node and split it
         this.root = {
             boundingBox: sceneBoundingBox,
@@ -33,7 +42,7 @@ export class BVH {
             leftChild: null,
             rightChild: null,
             isLeaf: false,
-            depth: 0
+            depth: 0,
         };
 
         // Split the root node into two children
@@ -47,18 +56,22 @@ export class BVH {
 
         // Initialize with first triangle's first vertex
         const firstVertex = this.triangles[0].v0;
-        let minX = firstVertex[0], minY = firstVertex[1], minZ = firstVertex[2];
-        let maxX = firstVertex[0], maxY = firstVertex[1], maxZ = firstVertex[2];
+        let minX = firstVertex[0],
+            minY = firstVertex[1],
+            minZ = firstVertex[2];
+        let maxX = firstVertex[0],
+            maxY = firstVertex[1],
+            maxZ = firstVertex[2];
 
         // Check all vertices of all triangles
         for (const triangle of this.triangles) {
             const vertices = [triangle.v0, triangle.v1, triangle.v2];
-            
+
             for (const vertex of vertices) {
                 minX = Math.min(minX, vertex[0]);
                 minY = Math.min(minY, vertex[1]);
                 minZ = Math.min(minZ, vertex[2]);
-                
+
                 maxX = Math.max(maxX, vertex[0]);
                 maxY = Math.max(maxY, vertex[1]);
                 maxZ = Math.max(maxZ, vertex[2]);
@@ -67,7 +80,7 @@ export class BVH {
 
         return {
             min: [minX, minY, minZ],
-            max: [maxX, maxY, maxZ]
+            max: [maxX, maxY, maxZ],
         };
     }
 
@@ -76,7 +89,7 @@ export class BVH {
         return [
             (triangle.v0[0] + triangle.v1[0] + triangle.v2[0]) / 3,
             (triangle.v0[1] + triangle.v1[1] + triangle.v2[1]) / 3,
-            (triangle.v0[2] + triangle.v1[2] + triangle.v2[2]) / 3
+            (triangle.v0[2] + triangle.v1[2] + triangle.v2[2]) / 3,
         ];
     }
 
@@ -84,57 +97,75 @@ export class BVH {
         const size = [
             boundingBox.max[0] - boundingBox.min[0],
             boundingBox.max[1] - boundingBox.min[1],
-            boundingBox.max[2] - boundingBox.min[2]
+            boundingBox.max[2] - boundingBox.min[2],
         ];
-        
+
         // Surface area of a box: 2 * (width*height + width*depth + height*depth)
         return 2 * (size[0] * size[1] + size[0] * size[2] + size[1] * size[2]);
     }
 
-    private findBestSAHSplit(node: BVHNode): { axis: 0 | 1 | 2; position: number; cost: number } | null {
+    private findBestSAHSplit(
+        node: BVHNode
+    ): { axis: 0 | 1 | 2; position: number; cost: number } | null {
         const triangleCount = node.triangleIndices.length;
         const nodeSurfaceArea = this.calculateSurfaceArea(node.boundingBox);
-        
+
         // SAH constants
         const traversalCost = 1.0;
         const intersectionCost = 1.0;
-        
+
         let bestCost = Infinity;
         let bestAxis: 0 | 1 | 2 = 0;
         let bestPosition = 0;
-        
+
         // Test each axis
         for (let axis = 0; axis < 3; axis++) {
             // Sort triangle centroids along this axis
-            const sortedCentroids = node.triangleIndices.map(index => ({
-                index,
-                centroid: this.calculateTriangleCentroid(index)[axis.toString() as '0' | '1' | '2']
-            })).sort((a, b) => a.centroid - b.centroid);
-            
+            const sortedCentroids = node.triangleIndices
+                .map((index) => ({
+                    index,
+                    centroid:
+                        this.calculateTriangleCentroid(index)[
+                            axis.toString() as '0' | '1' | '2'
+                        ],
+                }))
+                .sort((a, b) => a.centroid - b.centroid);
+
             // Test splits between each pair of adjacent triangles
             for (let i = 1; i < triangleCount; i++) {
-                const splitPosition = (sortedCentroids[i - 1].centroid + sortedCentroids[i].centroid) * 0.5;
-                
+                const splitPosition =
+                    (sortedCentroids[i - 1].centroid +
+                        sortedCentroids[i].centroid) *
+                    0.5;
+
                 // Count triangles on each side
-                const leftTriangles = sortedCentroids.slice(0, i).map(item => item.index);
-                const rightTriangles = sortedCentroids.slice(i).map(item => item.index);
-                
+                const leftTriangles = sortedCentroids
+                    .slice(0, i)
+                    .map((item) => item.index);
+                const rightTriangles = sortedCentroids
+                    .slice(i)
+                    .map((item) => item.index);
+
                 // Calculate bounding boxes for each side
-                const leftBBox = this.calculateBoundingBoxForTriangles(leftTriangles);
-                const rightBBox = this.calculateBoundingBoxForTriangles(rightTriangles);
-                
+                const leftBBox =
+                    this.calculateBoundingBoxForTriangles(leftTriangles);
+                const rightBBox =
+                    this.calculateBoundingBoxForTriangles(rightTriangles);
+
                 // Calculate surface areas
                 const leftSurfaceArea = this.calculateSurfaceArea(leftBBox);
                 const rightSurfaceArea = this.calculateSurfaceArea(rightBBox);
-                
+
                 // Calculate SAH cost
                 const leftProbability = leftSurfaceArea / nodeSurfaceArea;
                 const rightProbability = rightSurfaceArea / nodeSurfaceArea;
-                
-                const cost = traversalCost + 
-                    intersectionCost * (leftProbability * leftTriangles.length + 
-                                       rightProbability * rightTriangles.length);
-                
+
+                const cost =
+                    traversalCost +
+                    intersectionCost *
+                        (leftProbability * leftTriangles.length +
+                            rightProbability * rightTriangles.length);
+
                 if (cost < bestCost) {
                     bestCost = cost;
                     bestAxis = axis as 0 | 1 | 2;
@@ -142,18 +173,20 @@ export class BVH {
                 }
             }
         }
-        
+
         // Compare with cost of not splitting (making this a leaf)
         const leafCost = intersectionCost * triangleCount;
-        
+
         if (bestCost >= leafCost) {
             return null; // Better to make this a leaf
         }
-        
+
         return { axis: bestAxis, position: bestPosition, cost: bestCost };
     }
 
-    private calculateBoundingBoxForTriangles(triangleIndices: number[]): BoundingBox {
+    private calculateBoundingBoxForTriangles(
+        triangleIndices: number[]
+    ): BoundingBox {
         if (triangleIndices.length === 0) {
             return { min: [0, 0, 0], max: [0, 0, 0] };
         }
@@ -161,19 +194,23 @@ export class BVH {
         // Initialize with first triangle's first vertex
         const firstTriangle = this.triangles[triangleIndices[0]];
         const firstVertex = firstTriangle.v0;
-        let minX = firstVertex[0], minY = firstVertex[1], minZ = firstVertex[2];
-        let maxX = firstVertex[0], maxY = firstVertex[1], maxZ = firstVertex[2];
+        let minX = firstVertex[0],
+            minY = firstVertex[1],
+            minZ = firstVertex[2];
+        let maxX = firstVertex[0],
+            maxY = firstVertex[1],
+            maxZ = firstVertex[2];
 
         // Check all vertices of specified triangles
         for (const triangleIndex of triangleIndices) {
             const triangle = this.triangles[triangleIndex];
             const vertices = [triangle.v0, triangle.v1, triangle.v2];
-            
+
             for (const vertex of vertices) {
                 minX = Math.min(minX, vertex[0]);
                 minY = Math.min(minY, vertex[1]);
                 minZ = Math.min(minZ, vertex[2]);
-                
+
                 maxX = Math.max(maxX, vertex[0]);
                 maxY = Math.max(maxY, vertex[1]);
                 maxZ = Math.max(maxZ, vertex[2]);
@@ -182,7 +219,7 @@ export class BVH {
 
         return {
             min: [minX, minY, minZ],
-            max: [maxX, maxY, maxZ]
+            max: [maxX, maxY, maxZ],
         };
     }
 
@@ -195,7 +232,7 @@ export class BVH {
 
         // Find the best split using Surface Area Heuristic
         const bestSplit = this.findBestSAHSplit(node);
-        
+
         if (!bestSplit) {
             // Fallback to leaf if no good split found
             node.isLeaf = true;
@@ -224,7 +261,7 @@ export class BVH {
                 const centroidB = this.calculateTriangleCentroid(b);
                 return centroidA[bestSplit.axis] - centroidB[bestSplit.axis];
             });
-            
+
             leftTriangles.length = 0;
             rightTriangles.length = 0;
             leftTriangles.push(...node.triangleIndices.slice(0, mid));
@@ -238,7 +275,7 @@ export class BVH {
             leftChild: null,
             rightChild: null,
             isLeaf: false,
-            depth: node.depth + 1
+            depth: node.depth + 1,
         };
 
         node.rightChild = {
@@ -247,7 +284,7 @@ export class BVH {
             leftChild: null,
             rightChild: null,
             isLeaf: false,
-            depth: node.depth + 1
+            depth: node.depth + 1,
         };
 
         // Clear triangle indices from internal node
@@ -262,7 +299,7 @@ export class BVH {
     public getWireframeVertices(maxDepth: number = -1): Float32Array {
         if (!this.root) return new Float32Array(0);
 
-        const allVertices: { position: Vec3, color: Vec3 }[] = [];
+        const allVertices: { position: Vec3; color: Vec3 }[] = [];
 
         // Traverse BVH and add bounding boxes of leaf nodes
         const nodesToVisit: BVHNode[] = [this.root];
@@ -273,11 +310,19 @@ export class BVH {
                 continue; // Skip nodes deeper than maxDepth
             }
 
-            const vertices = this.generateBoundingBoxVertices(currentNode.boundingBox);
-            allVertices.push(...vertices.map(vertex => ({
-                position: vertex,
-                color: [currentNode.depth / (this.stats?.maxDepth ?? 4), 0, 0] as Vec3 // White color for bounding box edges
-            })));
+            const vertices = this.generateBoundingBoxVertices(
+                currentNode.boundingBox
+            );
+            allVertices.push(
+                ...vertices.map((vertex) => ({
+                    position: vertex,
+                    color: [
+                        currentNode.depth / (this.stats?.maxDepth ?? 4),
+                        0,
+                        0,
+                    ] as Vec3, // White color for bounding box edges
+                }))
+            );
 
             if (!currentNode.isLeaf) {
                 if (currentNode.leftChild) {
@@ -290,12 +335,21 @@ export class BVH {
         }
 
         this.wireframeVerticesCount = allVertices.length;
-        return new Float32Array(allVertices.flatMap(v => [v.position[0], v.position[1], v.position[2], v.color[0], v.color[1], v.color[2]]));
+        return new Float32Array(
+            allVertices.flatMap((v) => [
+                v.position[0],
+                v.position[1],
+                v.position[2],
+                v.color[0],
+                v.color[1],
+                v.color[2],
+            ])
+        );
     }
 
     private generateBoundingBoxVertices(bbox: BoundingBox): Vec3[] {
         const { min, max } = bbox;
-        
+
         // Create the 8 corners of the bounding box
         const corners: Vec3[] = [
             [min[0], min[1], min[2]], // 0: min corner
@@ -315,27 +369,36 @@ export class BVH {
             corners[i][1] = min[1] + (corners[i][1] - min[1]) * scale;
             corners[i][2] = min[2] + (corners[i][2] - min[2]) * scale;
         }
-        
+
         // Define the 12 edges of a cube (each edge as two vertex indices)
         const edges = [
             // Bottom face (Z = min)
-            [0, 1], [1, 2], [2, 3], [3, 0],
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
             // Top face (Z = max)
-            [4, 5], [5, 6], [6, 7], [7, 4],
+            [4, 5],
+            [5, 6],
+            [6, 7],
+            [7, 4],
             // Vertical edges
-            [0, 4], [1, 5], [2, 6], [3, 7]
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
         ];
-        
+
         // Convert edges to vertex array (2 vertices per edge, 3 components per vertex)
         const vertices: Vec3[] = [];
-        
+
         for (const [start, end] of edges) {
             // Start vertex
             vertices.push(corners[start]);
             // End vertex
             vertices.push(corners[end]);
         }
-        
+
         return vertices;
     }
 
@@ -343,7 +406,10 @@ export class BVH {
         return this.stats;
     }
 
-    private collectBVHStats(node: BVHNode, depth: number): {
+    private collectBVHStats(
+        node: BVHNode,
+        depth: number
+    ): {
         leafNodes: number;
         totalTriangles: number;
         totalNodes: number;
@@ -353,22 +419,28 @@ export class BVH {
             totalNodes: 1,
             leafNodes: node.isLeaf ? 1 : 0,
             totalTriangles: node.isLeaf ? node.triangleIndices.length : 0,
-            maxDepth: depth
-        }
+            maxDepth: depth,
+        };
 
         if (node.leftChild) {
             const childStats = this.collectBVHStats(node.leftChild, depth + 1);
             nodeStats.totalNodes += childStats.totalNodes;
             nodeStats.leafNodes += childStats.leafNodes;
             nodeStats.totalTriangles += childStats.totalTriangles;
-            nodeStats.maxDepth = Math.max(nodeStats.maxDepth, childStats.maxDepth);
+            nodeStats.maxDepth = Math.max(
+                nodeStats.maxDepth,
+                childStats.maxDepth
+            );
         }
         if (node.rightChild) {
             const childStats = this.collectBVHStats(node.rightChild, depth + 1);
             nodeStats.totalNodes += childStats.totalNodes;
             nodeStats.leafNodes += childStats.leafNodes;
             nodeStats.totalTriangles += childStats.totalTriangles;
-            nodeStats.maxDepth = Math.max(nodeStats.maxDepth, childStats.maxDepth);
+            nodeStats.maxDepth = Math.max(
+                nodeStats.maxDepth,
+                childStats.maxDepth
+            );
         }
 
         return nodeStats;
@@ -386,16 +458,16 @@ export class BVH {
         if (!this.root) {
             return {
                 nodes: new Float32Array(0),
-                triangleIndices: new Uint32Array(0)
+                triangleIndices: new Uint32Array(0),
             };
         }
 
         const nodeList: BVHNode[] = [];
         const triangleIndexList: number[] = [];
-        
+
         // Flatten tree into linear array using depth-first traversal
         this.flattenBVH(this.root, nodeList, triangleIndexList);
-        
+
         // Convert to GPU-friendly format
         // Each node: [minX, minY, minZ, padding, maxX, maxY, maxZ, leftChild/triangleStart, rightChild/triangleCount, isLeaf, padding, padding]
         const nodes = new Float32Array(nodeList.length * 12);
@@ -435,7 +507,7 @@ export class BVH {
 
         return {
             nodes,
-            triangleIndices: new Uint32Array(triangleIndexList)
+            triangleIndices: new Uint32Array(triangleIndexList),
         };
     }
 
@@ -446,7 +518,7 @@ export class BVH {
     ): number {
         const currentIndex = nodeList.length;
         nodeList.push(node);
-        
+
         if (node.isLeaf) {
             // Store triangle indices and set triangle start
             (node as any).triangleStart = triangleIndexList.length;
@@ -456,15 +528,23 @@ export class BVH {
         } else {
             // Process children and store their indices
             if (node.leftChild) {
-                const leftIndex = this.flattenBVH(node.leftChild, nodeList, triangleIndexList);
+                const leftIndex = this.flattenBVH(
+                    node.leftChild,
+                    nodeList,
+                    triangleIndexList
+                );
                 (node as any).leftIndex = leftIndex;
             }
             if (node.rightChild) {
-                const rightIndex = this.flattenBVH(node.rightChild, nodeList, triangleIndexList);
+                const rightIndex = this.flattenBVH(
+                    node.rightChild,
+                    nodeList,
+                    triangleIndexList
+                );
                 (node as any).rightIndex = rightIndex;
             }
         }
-        
+
         return currentIndex;
     }
 }

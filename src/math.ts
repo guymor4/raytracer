@@ -18,34 +18,51 @@ export class Mat4 {
         return this;
     }
 
-    static perspective(fov: number, aspect: number, near: number, far: number): Mat4 {
+    static perspective(
+        fov: number,
+        aspect: number,
+        near: number,
+        far: number
+    ): Mat4 {
         const mat = new Mat4();
         const f = 1.0 / Math.tan(fov * 0.5);
-        
+
         mat.data[0] = f / aspect;
         mat.data[5] = f;
         mat.data[10] = (far + near) / (near - far);
         mat.data[11] = -1;
         mat.data[14] = (2 * far * near) / (near - far);
         mat.data[15] = 0;
-        
+
         return mat;
     }
 
     static lookAt(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
         const mat = new Mat4();
-        
+
         // Calculate camera basis vectors
         const zAxis = normalize(subtract(eye, target)); // Forward (camera looks down -Z)
-        const xAxis = normalize(cross(up, zAxis));       // Right
-        const yAxis = cross(zAxis, xAxis);               // Up
-        
+        const xAxis = normalize(cross(up, zAxis)); // Right
+        const yAxis = cross(zAxis, xAxis); // Up
+
         // Create view matrix
-        mat.data[0] = xAxis[0]; mat.data[1] = yAxis[0]; mat.data[2] = zAxis[0]; mat.data[3] = 0;
-        mat.data[4] = xAxis[1]; mat.data[5] = yAxis[1]; mat.data[6] = zAxis[1]; mat.data[7] = 0;
-        mat.data[8] = xAxis[2]; mat.data[9] = yAxis[2]; mat.data[10] = zAxis[2]; mat.data[11] = 0;
-        mat.data[12] = -dot(xAxis, eye); mat.data[13] = -dot(yAxis, eye); mat.data[14] = -dot(zAxis, eye); mat.data[15] = 1;
-        
+        mat.data[0] = xAxis[0];
+        mat.data[1] = yAxis[0];
+        mat.data[2] = zAxis[0];
+        mat.data[3] = 0;
+        mat.data[4] = xAxis[1];
+        mat.data[5] = yAxis[1];
+        mat.data[6] = zAxis[1];
+        mat.data[7] = 0;
+        mat.data[8] = xAxis[2];
+        mat.data[9] = yAxis[2];
+        mat.data[10] = zAxis[2];
+        mat.data[11] = 0;
+        mat.data[12] = -dot(xAxis, eye);
+        mat.data[13] = -dot(yAxis, eye);
+        mat.data[14] = -dot(zAxis, eye);
+        mat.data[15] = 1;
+
         return mat;
     }
 
@@ -54,7 +71,7 @@ export class Mat4 {
         const a = this.data;
         const b = other.data;
         const r = result.data;
-        
+
         for (let i = 0; i < 4; i++) {
             for (let j = 0; j < 4; j++) {
                 let sum = 0;
@@ -64,7 +81,7 @@ export class Mat4 {
                 r[i * 4 + j] = sum;
             }
         }
-        
+
         return result;
     }
 }
@@ -83,7 +100,7 @@ function cross(a: Vec3, b: Vec3): Vec3 {
     return [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0]
+        a[0] * b[1] - a[1] * b[0],
     ];
 }
 
