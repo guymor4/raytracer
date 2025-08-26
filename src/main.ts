@@ -3,6 +3,7 @@ import * as Common from './common.js';
 import { RethrownError } from './common.js';
 import { FPSCounter } from './FPSCounter.js';
 import { BVH } from './BVH.js';
+import { UIControls } from './UIControls';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -91,19 +92,17 @@ class WebGPURenderer {
 
             // Load scene
             try {
-                renderer.currentScene = (await fetch(scenePath).then((r) =>
-                    r.json()
-                )) as Scene;
+                renderer.currentScene = await Common.loadScene(scenePath);
 
                 // Create BVH for triangles
                 console.log('Creating BVH...');
                 renderer.bvh = new BVH(renderer.currentScene.triangles);
                 console.log('BVH created successfully', renderer.bvh);
             } catch (error) {
-                Common.showError(
-                    'Failed to load scene.json: ' + (error as Error).message
+                throw new RethrownError(
+                    `Failed to load '${scenePath}'`,
+                    error as Error
                 );
-                throw error;
             }
 
             // Create scene buffers and bind groups
@@ -752,7 +751,7 @@ class WebGPURenderer {
     }
 }
 
-async function main(scenePath: string = 'scene.json'): Promise<void> {
+async function main(): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
     const settingsElement = document.getElementById('settings');
@@ -767,94 +766,73 @@ async function main(scenePath: string = 'scene.json'): Promise<void> {
         throw new Error('Settings element not found');
     }
 
-    const renderer = await WebGPURenderer.Create(canvas, fpsElement, scenePath);
+    // Create settings UI and wire up events
+    settingsElement.innerHTML = ''; // Clear existing content
+
+    const controls = new UIControls(settingsElement);
+
+    // Add input for scene selection
+    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json' };
+    const selectedOption = controls.addSelect(
+        'Scene: ',
+        Object.keys(scenes),
+        'Spheres',
+        () => {
+            // For simplicity, we reload the entire page and the new scene will be loaded on startup
+            main();
+        }
+    );
+    const storedScenePath = scenes[selectedOption as keyof typeof scenes];
+
+    const renderer = await WebGPURenderer.Create(
+        canvas,
+        fpsElement,
+        storedScenePath
+    );
     if (!renderer) {
         return;
     }
 
-    // Create settings UI and wire up events
-    settingsElement.innerHTML = ''; // Clear existing content
-
-    // Add input for scene selection
-    const sceneDiv = document.createElement('div');
-    const sceneLabel = document.createElement('label');
-    sceneLabel.textContent = 'Scene: ';
-    const sceneSelect = document.createElement('select');
-    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json' };
-    for (const [sceneName, scenePath] of Object.entries(scenes)) {
-        const option = document.createElement('option');
-        option.value = scenePath;
-        option.textContent = sceneName;
-        sceneSelect.appendChild(option);
-    }
-    sceneSelect.onchange = (event) => {
-        const value = (event.target as HTMLSelectElement).value;
-        // For simplicity, we reload the entire renderer with the new scene
-        main(value); // Reload the main function to reset with new scene
-    };
-    sceneDiv.appendChild(sceneLabel);
-    sceneDiv.appendChild(sceneSelect);
-    settingsElement.appendChild(sceneDiv);
-
     // Add input for samples per pixel
-    const samplesDiv = document.createElement('div');
-    const samplesLabel = document.createElement('label');
-    samplesLabel.textContent = 'Samples per pixel: ';
-    const samplesInput = document.createElement('input');
-    samplesInput.type = 'number';
-    samplesInput.min = '1';
-    samplesInput.max = '16';
-    samplesInput.value = '1';
-    samplesInput.oninput = (event) => {
-        const value = (event.target as HTMLInputElement).value;
-        const samples = parseInt(value) || 1;
-        renderer.setSamplesPerPixel(samples);
-    };
-    samplesDiv.appendChild(samplesLabel);
-    samplesDiv.appendChild(samplesInput);
-    settingsElement.appendChild(samplesDiv);
+    const samplesPerPixel = controls.addInput(
+        'Samples per pixel: ',
+        'number',
+        '1',
+        (value) => {
+            const samples = parseInt(value) || 1;
+            renderer.setSamplesPerPixel(samples);
+        }
+    );
+    renderer.setSamplesPerPixel(parseInt(samplesPerPixel));
 
     // Add a debug checkbox
-    const enableDebugDiv = document.createElement('div');
-    const enableDebugLabel = document.createElement('label');
-    enableDebugLabel.textContent = 'Enable Debug';
-    const enableDebugCheckbox = document.createElement('input');
-    enableDebugCheckbox.type = 'checkbox';
-    enableDebugCheckbox.onchange = (event) => {
-        const checked = (event.target as HTMLInputElement).checked;
-        renderer.setDebug(checked);
-    };
-    enableDebugDiv.appendChild(enableDebugCheckbox);
-    enableDebugDiv.appendChild(enableDebugLabel);
-    settingsElement.appendChild(enableDebugDiv);
+    const debugEnabled = controls.addCheckbox(
+        'Enable Debug',
+        false,
+        (checked) => {
+            renderer.setDebug(checked);
+        }
+    );
+    renderer.setDebug(debugEnabled);
 
     // Add input for BVH depth visibility
-    const bvhDepthDiv = document.createElement('div');
-    const bvhDepthLabel = document.createElement('label');
-    bvhDepthLabel.textContent = 'BVH Depth: ';
-    const bvhDepthInput = document.createElement('input');
-    bvhDepthInput.type = 'number';
-    bvhDepthInput.min = '1';
-    bvhDepthInput.max = '32';
-    bvhDepthInput.value = '1';
-    bvhDepthInput.oninput = (event) => {
-        const value = (event.target as HTMLInputElement).value;
-        const depth = parseInt(value) || 1;
-        if (renderer['bvh']) {
-            renderer.updateDebugBuffers(depth);
+    const bvhDepth = controls.addInput(
+        'BVH Depth: ',
+        'number',
+        '1',
+        (value) => {
+            const depth = parseInt(value) || 1;
+            if (renderer['bvh']) {
+                renderer.updateDebugBuffers(depth);
+            }
         }
-    };
-    bvhDepthDiv.appendChild(bvhDepthLabel);
-    bvhDepthDiv.appendChild(bvhDepthInput);
-    settingsElement.appendChild(bvhDepthDiv);
+    );
+    renderer.updateDebugBuffers(parseInt(bvhDepth));
 
     // Reset accumulation button
-    const resetButton = document.createElement('button');
-    resetButton.textContent = 'Reset accumulation';
-    resetButton.onclick = () => {
+    controls.addButton('Reset accumulation', () => {
         renderer.resetAccumulation();
-    };
-    settingsElement.appendChild(resetButton);
+    });
 
     // Update BVH info display
     const bvhInfo = document.getElementById('bvh-info') as HTMLDivElement;

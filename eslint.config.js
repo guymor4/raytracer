@@ -48,9 +48,11 @@ export default [
         HTMLSelectElement: 'readonly',
         HTMLInputElement: 'readonly',
         HTMLDivElement: 'readonly',
+        localStorage: 'readonly',
       },
     },
     rules: {
+      "no-unused-vars": "off",
       'prettier/prettier': 'error',
       '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/explicit-function-return-type': 'off',
