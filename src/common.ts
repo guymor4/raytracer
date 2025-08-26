@@ -1,4 +1,4 @@
-import {RawScene, Scene, Triangle, Vec3} from "./types";
+import { RawScene, Scene, Triangle, Vec3 } from './types';
 
 export function showError(message: string): void {
     console.error('WebGPU Error:', message);
@@ -49,18 +49,18 @@ function parseOBJ(objText: string): { triangles: Triangle[] } {
     const tempPositions: Vec3[] = [];
     const tempNormals: Vec3[] = [];
 
-    const lines = objText.split("\n");
+    const lines = objText.split('\n');
     for (let line of lines) {
         line = line.trim();
-        if (line.startsWith("v ")) {
+        if (line.startsWith('v ')) {
             const [, x, y, z] = line.split(/\s+/);
             tempPositions.push([parseFloat(x), parseFloat(y), parseFloat(z)]);
-        } else if (line.startsWith("vn ")) {
+        } else if (line.startsWith('vn ')) {
             const [, x, y, z] = line.split(/\s+/);
             tempNormals.push([parseFloat(x), parseFloat(y), parseFloat(z)]);
-        } else if (line.startsWith("f ")) {
+        } else if (line.startsWith('f ')) {
             // f v1//vn1 v2//vn2 v3//vn3
-            const parts = line.slice(2).trim().split(" ");
+            const parts = line.slice(2).trim().split(' ');
             if (parts.length < 3) continue;
 
             // Triangulate polygons with more than 3 verts (fan triangulation)
@@ -68,10 +68,17 @@ function parseOBJ(objText: string): { triangles: Triangle[] } {
                 const triangleVertices: Vec3[] = [];
 
                 for (let fv of [parts[0], parts[i], parts[i + 1]]) {
-                    const [vIdx, , nIdx] = fv.split("/").map(x => x ? parseInt(x) : undefined);
+                    const [vIdx, , nIdx] = fv
+                        .split('/')
+                        .map((x) => (x ? parseInt(x) : undefined));
                     if (vIdx === undefined || nIdx === undefined) continue;
 
-                    if (vIdx < 1 || vIdx > tempPositions.length || nIdx < 1 || nIdx > tempNormals.length) {
+                    if (
+                        vIdx < 1 ||
+                        vIdx > tempPositions.length ||
+                        nIdx < 1 ||
+                        nIdx > tempNormals.length
+                    ) {
                         console.warn(`Invalid index in face definition: ${fv}`);
                         continue;
                     }
@@ -92,13 +99,13 @@ function parseOBJ(objText: string): { triangles: Triangle[] } {
                     emissionColor: [0, 0, 0],
                     emissionStrength: 0,
                     smoothness: 0,
-                    specularProbability: 0
+                    specularProbability: 0,
                 });
             }
         }
     }
 
-    return {triangles};
+    return { triangles };
 }
 
 export async function loadScene(scenePath: string): Promise<Scene> {
@@ -107,23 +114,28 @@ export async function loadScene(scenePath: string): Promise<Scene> {
         throw new Error(`Failed to load scene file: ${response.statusText}`);
     }
 
-    const scene: RawScene= await response.json();
+    const scene: RawScene = await response.json();
 
     // If triangles is a string, treat it as a path to an OBJ file
     for (const model of scene.models ?? []) {
         if (model.path) {
             try {
                 const objData = await loadOBJ(model.path);
-                scene.triangles.push(...objData.triangles.map(triangle => ({
-                    ...triangle,
-                    color: model.color,
-                    emissionColor: model.emissionColor,
-                    emissionStrength: model.emissionStrength,
-                    smoothness: model.smoothness,
-                    specularProbability: model.specularProbability
-                })));
+                scene.triangles.push(
+                    ...objData.triangles.map((triangle) => ({
+                        ...triangle,
+                        color: model.color,
+                        emissionColor: model.emissionColor,
+                        emissionStrength: model.emissionStrength,
+                        smoothness: model.smoothness,
+                        specularProbability: model.specularProbability,
+                    }))
+                );
             } catch (error) {
-                console.error(`Failed to load model from ${model.path}:`, error);
+                console.error(
+                    `Failed to load model from ${model.path}:`,
+                    error
+                );
             }
         }
     }
@@ -131,6 +143,6 @@ export async function loadScene(scenePath: string): Promise<Scene> {
     return {
         camera: scene.camera,
         spheres: scene.spheres,
-        triangles: scene.triangles
+        triangles: scene.triangles,
     } satisfies Scene;
 }

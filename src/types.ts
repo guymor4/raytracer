@@ -18,7 +18,7 @@ type Material = {
     emissionStrength: number;
     smoothness: number;
     specularProbability: number;
-}
+};
 
 export type Sphere = {
     center: Vec3;
@@ -29,7 +29,7 @@ export type Triangle = {
     v0: Vec3;
     v1: Vec3;
     v2: Vec3;
-} & Material
+} & Material;
 
 export type Model = {
     path: string;
@@ -43,7 +43,7 @@ export type RawScene = {
     spheres: Sphere[];
     triangles: Triangle[];
     models: Model[];
-}
+};
 
 export interface Scene {
     camera: Camera;

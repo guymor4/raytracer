@@ -1,7 +1,8 @@
-import {Scene} from './types.js';
+import { Scene } from './types.js';
 import * as Common from './common.js';
-import {RethrownError} from './common.js';
-import {FPSCounter} from './FPSCounter.js';
+import { RethrownError } from './common.js';
+import { FPSCounter } from './FPSCounter.js';
+import { UIControls } from './UIControls';
 
 class WebGPURenderer {
     private canvas: HTMLCanvasElement;
@@ -71,10 +72,10 @@ class WebGPURenderer {
             // Create pipelines
             try {
                 const pipelines = await renderer.createPipelines(
-                    renderer.device,
-                    renderer.intermediateTexture
+                    renderer.device
                 );
-                renderer.raytracerComputePipeline = pipelines.raytracerComputePipeline;
+                renderer.raytracerComputePipeline =
+                    pipelines.raytracerComputePipeline;
                 renderer.accumulatorPipeline = pipelines.accumulatorPipeline;
             } catch (error) {
                 throw new RethrownError(
@@ -148,21 +149,20 @@ class WebGPURenderer {
         });
     }
 
-    private async createPipelines(
-        device: GPUDevice,
-        intermediateTexture: GPUTexture
-    ): Promise<{
+    private async createPipelines(device: GPUDevice): Promise<{
         raytracerComputePipeline: GPUComputePipeline;
         accumulatorPipeline: GPURenderPipeline;
     }> {
-        const [commonCode, raytracerComputeCode, accumulatorCode] = await Promise.all([
-            fetch('common.wgsl').then((r) => r.text()),
-            fetch('raytracer_compute.wgsl').then((r) => r.text()),
-            fetch('accumulator.wgsl').then((r) => r.text()),
-        ]);
+        const [commonCode, raytracerComputeCode, accumulatorCode] =
+            await Promise.all([
+                fetch('common.wgsl').then((r) => r.text()),
+                fetch('raytracer_compute.wgsl').then((r) => r.text()),
+                fetch('accumulator.wgsl').then((r) => r.text()),
+            ]);
 
         // Combine common utilities with shaders
-        const fullRaytracerComputeCode = commonCode + '\n' + raytracerComputeCode;
+        const fullRaytracerComputeCode =
+            commonCode + '\n' + raytracerComputeCode;
         const fullAccumulatorCode = commonCode + '\n' + accumulatorCode;
 
         const raytracerComputeShaderModule = device.createShaderModule({
@@ -478,12 +478,12 @@ class WebGPURenderer {
         this.updateUniformsBuffer();
 
         const commandEncoder = this.device.createCommandEncoder();
-        
+
         // First pass: Compute raytracing to intermediate texture
         const computePass = commandEncoder.beginComputePass();
         computePass.setPipeline(this.raytracerComputePipeline);
         computePass.setBindGroup(0, this.raytracerComputeBindGroup);
-        
+
         // Calculate dispatch size (8x8 workgroup size)
         const dispatchX = Math.ceil(this.resolution.width / 8);
         const dispatchY = Math.ceil(this.resolution.height / 8);
@@ -532,7 +532,7 @@ class WebGPURenderer {
     }
 }
 
-async function main(scenePath: string = 'scene_spheres.json'): Promise<void> {
+async function main(): Promise<void> {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const fpsElement = document.getElementById('fps');
     const settingsElement = document.getElementById('settings');
@@ -547,74 +547,59 @@ async function main(scenePath: string = 'scene_spheres.json'): Promise<void> {
         throw new Error('Settings element not found');
     }
 
-    const renderer = await WebGPURenderer.Create(canvas, fpsElement, scenePath);
+    // Create settings UI and wire up events
+    settingsElement.innerHTML = ''; // Clear existing content
+
+    const controls = new UIControls(settingsElement);
+
+    // Add input for scene selection
+    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json' };
+    const selectedOption = controls.addSelect(
+        'Scene: ',
+        Object.keys(scenes),
+        'Spheres',
+        () => {
+            // For simplicity, we reload the entire page and the new scene will be loaded on startup
+            main();
+        }
+    );
+    const storedScenePath = scenes[selectedOption as keyof typeof scenes];
+
+    const renderer = await WebGPURenderer.Create(
+        canvas,
+        fpsElement,
+        storedScenePath
+    );
     if (!renderer) {
         return;
     }
 
-    // Create settings UI and wire up events
-    settingsElement.innerHTML = ''; // Clear existing content
-
-    // Add input for scene selection
-    const sceneDiv = document.createElement('div');
-    const sceneLabel = document.createElement('label');
-    sceneLabel.textContent = 'Scene: ';
-    const sceneSelect = document.createElement('select');
-    const scenes = {'Spheres': 'scene_spheres.json', 'Boxes': 'scene_boxes.json'};
-    for (const [sceneName, scenePath] of Object.entries(scenes)) {
-        const option = document.createElement('option');
-        option.value = scenePath;
-        option.textContent = sceneName;
-        sceneSelect.appendChild(option);
-    }
-    sceneSelect.onchange = (event) => {
-        const value = (event.target as HTMLSelectElement).value;
-        // For simplicity, we reload the entire renderer with the new scene
-        main(value); // Reload the main function to reset with new scene
-    };
-    sceneDiv.appendChild(sceneLabel);
-    sceneDiv.appendChild(sceneSelect);
-    settingsElement.appendChild(sceneDiv);
-
     // Add input for samples per pixel
-    const samplesDiv = document.createElement('div');
-    const samplesLabel = document.createElement('label');
-    samplesLabel.textContent = 'Samples per pixel: ';
-    const samplesInput = document.createElement('input');
-    samplesInput.type = 'number';
-    samplesInput.min = '1';
-    samplesInput.max = '16';
-    samplesInput.value = '1';
-    samplesInput.oninput = (event) => {
-        const value = (event.target as HTMLInputElement).value;
-        const samples = parseInt(value) || 1;
-        renderer.setSamplesPerPixel(samples);
-    }
-    samplesDiv.appendChild(samplesLabel);
-    samplesDiv.appendChild(samplesInput);
-    settingsElement.appendChild(samplesDiv);
+    const samplesPerPixel = controls.addInput(
+        'Samples per pixel: ',
+        'number',
+        '1',
+        (value) => {
+            const samples = parseInt(value) || 1;
+            renderer.setSamplesPerPixel(samples);
+        }
+    );
+    renderer.setSamplesPerPixel(parseInt(samplesPerPixel));
 
     // Add a debug checkbox
-    const enableDebugDiv = document.createElement('div');
-    const enableDebugLabel = document.createElement('label');
-    enableDebugLabel.textContent = 'Enable Debug';
-    const enableDebugCheckbox = document.createElement('input');
-    enableDebugCheckbox.type = 'checkbox';
-    enableDebugCheckbox.onchange = (event) => {
-        const checked = (event.target as HTMLInputElement).checked;
-        renderer.setDebug(checked);
-    }
-    enableDebugDiv.appendChild(enableDebugCheckbox);
-    enableDebugDiv.appendChild(enableDebugLabel);
-    settingsElement.appendChild(enableDebugDiv);
+    const debugEnabled = controls.addCheckbox(
+        'Enable Debug',
+        false,
+        (checked) => {
+            renderer.setDebug(checked);
+        }
+    );
+    renderer.setDebug(debugEnabled);
 
     // Reset accumulation button
-    const resetButton = document.createElement('button');
-    resetButton.textContent = 'Reset accumulation';
-    resetButton.onclick = () => {
+    controls.addButton('Reset accumulation', () => {
         renderer.resetAccumulation();
-    };
-    settingsElement.appendChild(resetButton);
+    });
 
     // Start rendering loop in the background
     renderer.startRenderLoop();
