@@ -146,3 +146,13 @@ export async function loadScene(scenePath: string): Promise<Scene> {
         triangles: scene.triangles,
     } satisfies Scene;
 }
+
+// Formats large numbers into a more readable string with suffixes (K, M, B)
+export function formatNumber(num: number) {
+    const formatter = new Intl.NumberFormat('en-US', {
+        notation: 'compact',
+        compactDisplay: 'short', // 'short' for K, M, B; 'long' for thousand, million, billion
+        maximumFractionDigits: 2,
+    });
+    return formatter.format(num);
+}

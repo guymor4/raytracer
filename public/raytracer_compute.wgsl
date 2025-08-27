@@ -6,6 +6,7 @@
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var<storage, read_write> performance_counters: array<atomic<u32>>;
 
 fn luminance(color: vec3<f32>) -> f32 {
     return dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -22,8 +23,12 @@ fn ray_all(ray: Ray) -> HitInfo {
        }
    }
 
+   // Count triangle intersection test
+   atomicAdd(&performance_counters[0], arrayLength(&triangles));
+
    // Check triangle intersections
    for (var i = 0u; i < arrayLength(&triangles); i++) {
+
        let hit_info = ray_triangle_intersect(ray, triangles[i]);
        if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
            closest_hit = hit_info;

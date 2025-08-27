@@ -14,6 +14,7 @@ class WebGPURenderer {
     private spheresBuffer: GPUBuffer | null = null;
     private trianglesBuffer: GPUBuffer | null = null;
     private uniformsBuffer: GPUBuffer | null = null;
+    private performanceCountersBuffer: GPUBuffer | null = null;
     private raytracerComputeBindGroup: GPUBindGroup | null = null;
     private accumulatorBindGroup: GPUBindGroup | null = null;
     private intermediateTexture: GPUTexture | null = null;
@@ -245,6 +246,22 @@ class WebGPURenderer {
         });
         this.updateUniformsBuffer();
 
+        // Create performance counters buffer (4 bytes per counter, start with 4 counters)
+        this.performanceCountersBuffer = this.device.createBuffer({
+            size: 16, // 4 counters * 4 bytes each
+            usage:
+                GPUBufferUsage.STORAGE |
+                GPUBufferUsage.COPY_SRC |
+                GPUBufferUsage.COPY_DST,
+        });
+
+        // Initialize to zero
+        this.device.queue.writeBuffer(
+            this.performanceCountersBuffer,
+            0,
+            new Uint32Array(4)
+        );
+
         // Create spheres buffer
         // Sphere struct: 64 bytes
         const spheresSize = this.currentScene.spheres.length * 64;
@@ -374,6 +391,10 @@ class WebGPURenderer {
                     {
                         binding: 3,
                         resource: this.intermediateTexture!.createView(),
+                    },
+                    {
+                        binding: 4,
+                        resource: { buffer: this.performanceCountersBuffer! },
                     },
                 ],
             });
@@ -530,6 +551,48 @@ class WebGPURenderer {
         this.frameIndex = 0;
         this.updateUniformsBuffer();
     }
+
+    public async getTriangleTestsPerSecond(): Promise<number> {
+        if (!this.device || !this.performanceCountersBuffer) return 0;
+
+        // Create a buffer for reading back the counter data
+        const readBuffer = this.device.createBuffer({
+            size: 16,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+
+        // Copy counter data to read buffer
+        const commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.performanceCountersBuffer,
+            0,
+            readBuffer,
+            0,
+            16
+        );
+        this.device.queue.submit([commandEncoder.finish()]);
+
+        // Read the data
+        await readBuffer.mapAsync(GPUMapMode.READ);
+        const data = new Uint32Array(readBuffer.getMappedRange());
+        const triangleTests = data[0]; // Counter 0 is triangle tests
+        readBuffer.unmap();
+        readBuffer.destroy();
+
+        // Calculate tests per second based on FPS
+        const fps = this.fpsCounter.getFPS();
+        const testsPerSecond = triangleTests * fps;
+
+        // Reset counter for next measurement
+        const resetCounters = new Uint32Array(4);
+        this.device.queue.writeBuffer(
+            this.performanceCountersBuffer,
+            0,
+            resetCounters
+        );
+
+        return testsPerSecond;
+    }
 }
 
 async function main(): Promise<void> {
@@ -600,6 +663,22 @@ async function main(): Promise<void> {
     controls.addButton('Reset accumulation', () => {
         renderer.resetAccumulation();
     });
+
+    // Add performance display
+    const perfDiv = document.createElement('div');
+    const perfLabel = document.createElement('label');
+    perfLabel.textContent = 'Ray-Triangle tests/sec: ';
+    const perfValue = document.createElement('span');
+    perfValue.textContent = '0';
+    perfDiv.appendChild(perfLabel);
+    perfDiv.appendChild(perfValue);
+    settingsElement.appendChild(perfDiv);
+
+    // Update performance counter every second
+    setInterval(async () => {
+        const testsPerSecond = await renderer.getTriangleTestsPerSecond();
+        perfValue.textContent = Common.formatNumber(testsPerSecond);
+    }, 1000);
 
     // Start rendering loop in the background
     renderer.startRenderLoop();

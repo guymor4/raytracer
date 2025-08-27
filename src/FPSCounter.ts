@@ -2,6 +2,7 @@ export class FPSCounter {
     private frameCount = 0;
     private lastTime = performance.now();
     private fpsElement: HTMLElement;
+    private currentFPS = 0;
 
     constructor(fpsElement: HTMLElement) {
         this.fpsElement = fpsElement;
@@ -15,9 +16,14 @@ export class FPSCounter {
 
         if (deltaTime >= 1000) {
             const fps = Math.round((this.frameCount * 1000) / deltaTime);
+            this.currentFPS = fps;
             this.fpsElement.textContent = fps.toString();
             this.frameCount = 0;
             this.lastTime = currentTime;
         }
+    }
+
+    public getFPS(): number {
+        return this.currentFPS;
     }
 }
