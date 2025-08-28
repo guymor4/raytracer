@@ -44,6 +44,7 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
         let node = bvh_nodes[node_index];
 
         // Test ray against the bounding box
+        atomicAdd(&performance_counters[1], 1); // Count AABB tests
         if (!ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
             continue;
         }
@@ -55,6 +56,7 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
 
             // Bounds check triangle access
             let max_triangles = min(triangle_count, arrayLength(&bvh_triangle_indices) - triangle_start);
+            atomicAdd(&performance_counters[0], max_triangles);
             for (var i = 0u; i < max_triangles; i++) {
                 let triangle_index = bvh_triangle_indices[triangle_start + i];
 
@@ -94,9 +96,6 @@ fn ray_all(ray: Ray) -> HitInfo {
            closest_hit = hit_info;
        }
    }
-
-   // Count triangle intersection test
-   atomicAdd(&performance_counters[0], arrayLength(&triangles));
 
    //Check triangle intersections using BVH
    let triangle_hit = ray_bvh_triangles(ray);

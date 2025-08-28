@@ -26,7 +26,7 @@ class WebGPURenderer {
     private accumulationTextureB: GPUTexture | null = null;
     private textureSampler: GPUSampler | null = null;
     private frameIndex = 0;
-    private fpsCounter: FPSCounter;
+    public fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
     private bvh: BVH | null = null;
@@ -564,15 +564,15 @@ class WebGPURenderer {
                     },
                     {
                         binding: 4,
-                        resource: { buffer: this.bvhNodesBuffer },
+                        resource: { buffer: this.performanceCountersBuffer! },
                     },
                     {
                         binding: 5,
-                        resource: { buffer: this.bvhTriangleIndicesBuffer },
+                        resource: { buffer: this.bvhNodesBuffer },
                     },
                     {
-                        binding: 4,
-                        resource: { buffer: this.performanceCountersBuffer! },
+                        binding: 6,
+                        resource: { buffer: this.bvhTriangleIndicesBuffer },
                     },
                 ],
             });
@@ -771,8 +771,16 @@ class WebGPURenderer {
         this.updateUniformsBuffer();
     }
 
-    public async getTriangleTestsPerSecond(): Promise<number> {
-        if (!this.device || !this.performanceCountersBuffer) return 0;
+    public async getAndResetPerformanceCounters(): Promise<{
+        triangleTests: number;
+        aabbTests: number;
+    }> {
+        if (!this.device || !this.performanceCountersBuffer) {
+            return {
+                triangleTests: -1,
+                aabbTests: -1
+            };
+        }
 
         // Create a buffer for reading back the counter data
         const readBuffer = this.device.createBuffer({
@@ -795,12 +803,9 @@ class WebGPURenderer {
         await readBuffer.mapAsync(GPUMapMode.READ);
         const data = new Uint32Array(readBuffer.getMappedRange());
         const triangleTests = data[0]; // Counter 0 is triangle tests
+        const aabbTests = data[1]; // Counter 1 is AABB tests
         readBuffer.unmap();
         readBuffer.destroy();
-
-        // Calculate tests per second based on FPS
-        const fps = this.fpsCounter.getFPS();
-        const testsPerSecond = triangleTests * fps;
 
         // Reset counter for next measurement
         const resetCounters = new Uint32Array(4);
@@ -810,7 +815,10 @@ class WebGPURenderer {
             resetCounters
         );
 
-        return testsPerSecond;
+        return {
+            triangleTests,
+            aabbTests
+        };
     }
 }
 
@@ -907,10 +915,23 @@ async function main(): Promise<void> {
     perfDiv.appendChild(perfValue);
     settingsElement.appendChild(perfDiv);
 
+    const perf2Div = document.createElement('div');
+    const perf2Label = document.createElement('label');
+    perf2Label.textContent = 'Ray-AABB tests/sec: ';
+    const perf2Value = document.createElement('span');
+    perf2Value.textContent = '0';
+    perf2Div.appendChild(perf2Label);
+    perf2Div.appendChild(perf2Value);
+    settingsElement.appendChild(perf2Div);
+
     // Update performance counter every second
     setInterval(async () => {
-        const testsPerSecond = await renderer.getTriangleTestsPerSecond();
-        perfValue.textContent = Common.formatNumber(testsPerSecond);
+        const counters = await renderer.getAndResetPerformanceCounters();
+
+        const fps = renderer.fpsCounter.getFPS();
+
+        perfValue.textContent = Common.formatNumber(counters.triangleTests);
+        perf2Value.textContent = Common.formatNumber(counters.aabbTests);
     }, 1000);
 
     // Update BVH info display
