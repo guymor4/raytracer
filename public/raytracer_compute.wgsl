@@ -15,48 +15,49 @@ struct BVHNode {
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var<storage, read> bvh_nodes: array<BVHNode>;
-@group(0) @binding(5) var<storage, read> bvh_triangle_indices: array<u32>;
+@group(0) @binding(4) var<storage, read_write> performance_counters: array<atomic<u32>>;
+@group(0) @binding(5) var<storage, read> bvh_nodes: array<BVHNode>;
+@group(0) @binding(6) var<storage, read> bvh_triangle_indices: array<u32>;
 
 // BVH traversal for triangle intersections
 fn ray_bvh_triangles(ray: Ray) -> HitInfo {
     var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
-    
+
     if (arrayLength(&bvh_nodes) == 0u) {
         return closest_hit;
     }
-    
+
     // Stack for BVH traversal (max depth typical ~20-30)
     var stack: array<u32, 64>;
     var stack_ptr = 0u;
     var stack_size = 64u;
     stack[0] = 0u; // Start with root node
     stack_ptr = 1u;
-    
+
     while (stack_ptr > 0u) {
         stack_ptr--;
         let node_index = stack[stack_ptr];
         if (node_index >= arrayLength(&bvh_nodes)) {
             continue;
         }
-        
+
         let node = bvh_nodes[node_index];
-        
+
         // Test ray against the bounding box
         if (!ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
             continue;
         }
-        
+
         if (node.is_leaf > 0.5) {
             // Leaf node - test triangles
             let triangle_start = u32(node.left_or_triangle_start);
             let triangle_count = u32(node.right_or_triangle_count);
-            
+
             // Bounds check triangle access
             let max_triangles = min(triangle_count, arrayLength(&bvh_triangle_indices) - triangle_start);
             for (var i = 0u; i < max_triangles; i++) {
                 let triangle_index = bvh_triangle_indices[triangle_start + i];
-                
+
                 let hit_info = ray_triangle_intersect(ray, triangles[triangle_index]);
                 if (hit_info.t > 0.0 && (closest_hit.t < 0.0 || hit_info.t < closest_hit.t)) {
                     closest_hit = hit_info;
@@ -66,7 +67,7 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
             // Internal node - add children to stack (add right first so left is processed first)
             let left_child = u32(node.left_or_triangle_start);
             let right_child = u32(node.right_or_triangle_count);
-            
+
             // Add right child first (processed later)
             if (stack_ptr < stack_size - 1) {
                 stack[stack_ptr] = right_child;
@@ -79,7 +80,7 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
             }
         }
     }
-    
+
     return closest_hit;
 }
 
@@ -94,7 +95,10 @@ fn ray_all(ray: Ray) -> HitInfo {
        }
    }
 
-   // Check triangle intersections using BVH
+   // Count triangle intersection test
+   atomicAdd(&performance_counters[0], arrayLength(&triangles));
+
+   //Check triangle intersections using BVH
    let triangle_hit = ray_bvh_triangles(ray);
    if (triangle_hit.t > 0.0 && (closest_hit.t < 0 || triangle_hit.t < closest_hit.t)) {
        closest_hit = triangle_hit;

@@ -49,6 +49,8 @@ export default [
         HTMLInputElement: 'readonly',
         HTMLDivElement: 'readonly',
         localStorage: 'readonly',
+        GPUMapMode: 'readonly',
+        setInterval: 'readonly',
       },
     },
     rules: {
