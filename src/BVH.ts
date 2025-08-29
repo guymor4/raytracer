@@ -35,7 +35,9 @@ export class BVH {
         );
 
         // Calculate bounding box for all triangles
-        const sceneBoundingBox = this.calculateSceneBoundingBox();
+        const sceneBoundingBox = this.calculateBoundingBoxForTriangles(
+            triangleIndices
+        );
 
         // Create root node and split it
         this.root = {
@@ -49,41 +51,6 @@ export class BVH {
 
         // Split the root node into two children
         this.splitNode(this.root);
-    }
-
-    private calculateSceneBoundingBox(): BoundingBox {
-        if (this.triangles.length === 0) {
-            return { min: vec3.zero(), max: vec3.create(1, 1, 1) };
-        }
-
-        // Initialize with first triangle's first vertex
-        const firstVertex = this.triangles[0].v0;
-        let minX = firstVertex[0],
-            minY = firstVertex[1],
-            minZ = firstVertex[2];
-        let maxX = firstVertex[0],
-            maxY = firstVertex[1],
-            maxZ = firstVertex[2];
-
-        // Check all vertices of all triangles
-        for (const triangle of this.triangles) {
-            const vertices = [triangle.v0, triangle.v1, triangle.v2];
-
-            for (const vertex of vertices) {
-                minX = Math.min(minX, vertex[0]);
-                minY = Math.min(minY, vertex[1]);
-                minZ = Math.min(minZ, vertex[2]);
-
-                maxX = Math.max(maxX, vertex[0]);
-                maxY = Math.max(maxY, vertex[1]);
-                maxZ = Math.max(maxZ, vertex[2]);
-            }
-        }
-
-        return {
-            min: vec3.create(minX, minY, minZ),
-            max: vec3.create(maxX, maxY, maxZ),
-        };
     }
 
     private calculateTriangleCentroid(triangleIndex: number): Vec3 {

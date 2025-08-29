@@ -1,5 +1,5 @@
 import { RawScene, Scene, Triangle } from './types';
-import { Vec3, mat4, vec3 } from 'wgpu-matrix';
+import { mat4, Vec3, vec3 } from 'wgpu-matrix';
 
 export function showError(message: string): void {
     console.error('WebGPU Error:', message);
@@ -44,7 +44,6 @@ export async function loadOBJ(url: string) {
 }
 
 function parseOBJ(objText: string): { triangles: Triangle[] } {
-    // const normals: Vec3[] = [];
     const triangles: Triangle[] = [];
 
     const tempPositions: Vec3[] = [];
@@ -139,30 +138,9 @@ export async function loadScene(scenePath: string): Promise<Scene> {
             const objData = await loadOBJ(model.path);
 
             for (const triangle of objData.triangles) {
-                const v0 = vec3.transformMat4(
-                    vec3.fromValues(
-                        triangle.v0[0],
-                        triangle.v0[1],
-                        triangle.v0[2]
-                    ),
-                    modelMat
-                );
-                const v1 = vec3.transformMat4(
-                    vec3.fromValues(
-                        triangle.v1[0],
-                        triangle.v1[1],
-                        triangle.v1[2]
-                    ),
-                    modelMat
-                );
-                const v2 = vec3.transformMat4(
-                    vec3.fromValues(
-                        triangle.v2[0],
-                        triangle.v2[1],
-                        triangle.v2[2]
-                    ),
-                    modelMat
-                );
+                const v0 = vec3.transformMat4(triangle.v0, modelMat);
+                const v1 = vec3.transformMat4(triangle.v1, modelMat);
+                const v2 = vec3.transformMat4(triangle.v2, modelMat);
 
                 scene.triangles.push({
                     v0,
