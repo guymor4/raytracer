@@ -36,6 +36,7 @@ class WebGPURenderer {
     private debugVertexBuffer: GPUBuffer | null = null;
     private debugBindGroup: GPUBindGroup | null = null;
     private debugEnabled: boolean = false;
+    public paused: boolean = false;
 
     private constructor(canvas: HTMLCanvasElement, fpsElement: HTMLElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
@@ -305,6 +306,7 @@ class WebGPURenderer {
         // Create vertex buffer for wireframe
         const wireframeVertices = this.bvh.buildWireframeVertices();
         this.debugVertexBuffer = this.device.createBuffer({
+            label: 'DebugVertexBuffer',
             size: wireframeVertices.byteLength,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
@@ -342,6 +344,7 @@ class WebGPURenderer {
         if (wireframeVertices.byteLength != this.debugVertexBuffer.size) {
             this.debugVertexBuffer.destroy();
             this.debugVertexBuffer = this.device.createBuffer({
+                label: 'DebugVertexBuffer',
                 size: wireframeVertices.byteLength,
                 usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
             });
@@ -375,6 +378,7 @@ class WebGPURenderer {
 
         // Create uniforms buffer
         this.uniformsBuffer = this.device.createBuffer({
+            label: 'UniformsBuffer',
             size: 80,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
@@ -382,6 +386,7 @@ class WebGPURenderer {
 
         // Create performance counters buffer (4 bytes per counter, start with 4 counters)
         this.performanceCountersBuffer = this.device.createBuffer({
+            label: 'PerformanceCountersBuffer',
             size: 16, // 4 counters * 4 bytes each
             usage:
                 GPUBufferUsage.STORAGE |
@@ -398,7 +403,7 @@ class WebGPURenderer {
 
         // Create spheres buffer
         // Sphere struct: 64 bytes
-        const spheresSize = this.currentScene.spheres.length * 64;
+        const spheresSize = ((this.currentScene.spheres.length * 64) || 64); // Minimum size
         const spheresData = new Float32Array(spheresSize / 4);
         let spheresOffset = 0;
 
@@ -432,6 +437,7 @@ class WebGPURenderer {
         }
 
         this.spheresBuffer = this.device.createBuffer({
+            label: 'SpheresBuffer',
             size: spheresSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
@@ -493,6 +499,7 @@ class WebGPURenderer {
         }
 
         this.trianglesBuffer = this.device.createBuffer({
+            label: 'TrianglesBuffer',
             size: trianglesSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
@@ -514,6 +521,7 @@ class WebGPURenderer {
         // BVH nodes buffer
         const bvhNodesSize = bvhData.nodes.byteLength || 64; // Minimum size
         this.bvhNodesBuffer = this.device.createBuffer({
+            label: 'BVHNodesBuffer',
             size: bvhNodesSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
@@ -529,6 +537,7 @@ class WebGPURenderer {
         // BVH triangle indices buffer
         const bvhIndicesSize = bvhData.triangleIndices.byteLength || 4; // Minimum size
         this.bvhTriangleIndicesBuffer = this.device.createBuffer({
+            label: 'BVHTriangleIndicesBuffer',
             size: bvhIndicesSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
@@ -669,11 +678,13 @@ class WebGPURenderer {
 
         const stats = this.bvh.getBVHStats();
         if (!stats) return 'No BVH stats';
-        return `BVH: Avg leaf triangles: ${(stats.totalTriangles / stats.leafNodes).toFixed(1)} | Total nodes: ${stats.totalNodes} | Max depth: ${stats.maxDepth}`;
+        const meanTrianglesPerLeaf = stats.leafNodes > 0 ? (stats.totalTriangles / stats.leafNodes).toFixed(1) : '0.0';
+        return `BVH: Mean leaf triangles: ${meanTrianglesPerLeaf} | Max leaf triangles: ${stats.maxTrianglesPerLeaf} | Total nodes: ${stats.totalNodes} | Max depth: ${stats.maxDepth}`;
     }
 
     private render(): void {
         if (
+            this.paused ||
             !this.device ||
             !this.context ||
             !this.raytracerComputePipeline ||
@@ -684,9 +695,6 @@ class WebGPURenderer {
             return;
         }
 
-        // Update uniforms buffer with current frame counter
-        this.frameIndex++;
-        this.updateUniformsBuffer();
 
         const commandEncoder = this.device.createCommandEncoder();
 
@@ -751,6 +759,10 @@ class WebGPURenderer {
         }
 
         this.device.queue.submit([commandEncoder.finish()]);
+
+        // Update uniforms buffer with current frame counter
+        this.frameIndex++;
+        this.updateUniformsBuffer();
     }
 
     public startRenderLoop(): void {
@@ -774,11 +786,15 @@ class WebGPURenderer {
     public async getAndResetPerformanceCounters(): Promise<{
         triangleTests: number;
         aabbTests: number;
+        aabbHits: number;
+        rayCasts: number;
     }> {
         if (!this.device || !this.performanceCountersBuffer) {
             return {
                 triangleTests: -1,
-                aabbTests: -1
+                aabbTests: -1,
+                aabbHits: -1,
+                rayCasts: -1
             };
         }
 
@@ -804,6 +820,8 @@ class WebGPURenderer {
         const data = new Uint32Array(readBuffer.getMappedRange());
         const triangleTests = data[0]; // Counter 0 is triangle tests
         const aabbTests = data[1]; // Counter 1 is AABB tests
+        const aabbHits = data[2]; // Counter 2 is AABB hits
+        const rayCasts = data[2]; // Counter 3 is ray casts
         readBuffer.unmap();
         readBuffer.destroy();
 
@@ -817,7 +835,9 @@ class WebGPURenderer {
 
         return {
             triangleTests,
-            aabbTests
+            aabbTests,
+            aabbHits,
+            rayCasts
         };
     }
 }
@@ -843,7 +863,7 @@ async function main(): Promise<void> {
     const controls = new UIControls(settingsElement);
 
     // Add input for scene selection
-    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json' };
+    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json', Suzanne: 'scene_suzanne.json' };
     const selectedOption = controls.addSelect(
         'Scene: ',
         Object.keys(scenes),
@@ -905,6 +925,17 @@ async function main(): Promise<void> {
         renderer.resetAccumulation();
     });
 
+    // Pause / resume rendering button
+    const pauseResumeButton = controls.addButton('Pause', () => {
+        if (pauseResumeButton.textContent === 'Pause') {
+            renderer.paused = true;
+            pauseResumeButton.textContent = 'Resume';
+        } else {
+            renderer.paused = false;
+            pauseResumeButton.textContent = 'Pause';
+        }
+    });
+
     // Add performance display
     const perfDiv = document.createElement('div');
     const perfLabel = document.createElement('label');
@@ -924,14 +955,35 @@ async function main(): Promise<void> {
     perf2Div.appendChild(perf2Value);
     settingsElement.appendChild(perf2Div);
 
+    const perf3Div = document.createElement('div');
+    const perf3Label = document.createElement('label');
+    perf3Label.textContent = 'AABB hits/sec: ';
+    const perf3Value = document.createElement('span');
+    perf3Value.textContent = '0';
+    perf3Div.appendChild(perf3Label);
+    perf3Div.appendChild(perf3Value);
+    settingsElement.appendChild(perf3Div);
+
+    const perf4Div = document.createElement('div');
+    const perf4Label = document.createElement('label');
+    perf4Label.textContent = 'Ray casts/sec: ';
+    const perf4Value = document.createElement('span');
+    perf4Value.textContent = '0';
+    perf4Div.appendChild(perf4Label);
+    perf4Div.appendChild(perf4Value);
+    settingsElement.appendChild(perf4Div);
+
     // Update performance counter every second
     setInterval(async () => {
+        if (renderer.paused) {
+            return;
+        }
         const counters = await renderer.getAndResetPerformanceCounters();
-
-        const fps = renderer.fpsCounter.getFPS();
 
         perfValue.textContent = Common.formatNumber(counters.triangleTests);
         perf2Value.textContent = Common.formatNumber(counters.aabbTests);
+        perf3Value.textContent = Common.formatNumber(counters.aabbHits);
+        perf4Value.textContent = Common.formatNumber(counters.rayCasts);
     }, 1000);
 
     // Update BVH info display

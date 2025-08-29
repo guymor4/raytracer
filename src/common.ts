@@ -1,4 +1,5 @@
 import { RawScene, Scene, Triangle, Vec3 } from './types';
+import {mat4, vec3} from 'wgpu-matrix';
 
 export function showError(message: string): void {
     console.error('WebGPU Error:', message);
@@ -118,25 +119,43 @@ export async function loadScene(scenePath: string): Promise<Scene> {
 
     // If triangles is a string, treat it as a path to an OBJ file
     for (const model of scene.models ?? []) {
-        if (model.path) {
-            try {
-                const objData = await loadOBJ(model.path);
-                scene.triangles.push(
-                    ...objData.triangles.map((triangle) => ({
-                        ...triangle,
-                        color: model.color,
-                        emissionColor: model.emissionColor,
-                        emissionStrength: model.emissionStrength,
-                        smoothness: model.smoothness,
-                        specularProbability: model.specularProbability,
-                    }))
-                );
-            } catch (error) {
-                console.error(
-                    `Failed to load model from ${model.path}:`,
-                    error
-                );
+        if (!model.path) {
+            continue
+        }
+
+        // Create matrix transformations for position, rotation, scale if needed
+        const modelPos = vec3.fromValues(model.position[0], model.position[1], model.position[2]);
+        const modelRot = vec3.mulScalar(vec3.fromValues(model.rotation[0], model.rotation[1], model.rotation[2]), Math.PI / 180); // Convert degrees to radians
+        const modelScale = vec3.fromValues(model.scale[0], model.scale[1], model.scale[2]);
+        let modelMat = mat4.identity();
+
+        modelMat = mat4.translate(modelMat, modelPos);
+        modelMat = mat4.rotateX(modelMat, modelRot[0]);
+        modelMat = mat4.rotateY(modelMat, modelRot[1]);
+        modelMat = mat4.rotateZ(modelMat, modelRot[2]);
+        modelMat = mat4.scale(modelMat, modelScale);
+
+        try {
+            const objData = await loadOBJ(model.path);
+
+            for (const triangle of objData.triangles) {
+                const v0 = vec3.transformMat4(vec3.fromValues(triangle.v0[0], triangle.v0[1], triangle.v0[2]), modelMat)
+                const v1 = vec3.transformMat4(vec3.fromValues(triangle.v1[0], triangle.v1[1], triangle.v1[2]), modelMat)
+                const v2 = vec3.transformMat4(vec3.fromValues(triangle.v2[0], triangle.v2[1], triangle.v2[2]), modelMat)
+
+                scene.triangles.push({
+                    v0: [v0[0], v0[1], v0[2]],
+                    v1: [v1[0], v1[1], v1[2]],
+                    v2: [v2[0], v2[1], v2[2]],
+                    color: model.color,
+                    emissionColor: model.emissionColor,
+                    emissionStrength: model.emissionStrength,
+                    smoothness: model.smoothness,
+                    specularProbability: model.specularProbability,
+                })
             }
+        } catch (error) {
+            throw new RethrownError(`Failed to load model: ${model.path}`, error as Error);
         }
     }
 

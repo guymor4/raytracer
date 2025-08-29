@@ -290,11 +290,8 @@ fn ray_aabb_intersect(ray: Ray, min_bounds: vec3<f32>, max_bounds: vec3<f32>) ->
     let t0s = (min_bounds - ray.origin) * inv_dir;
     let t1s = (max_bounds - ray.origin) * inv_dir;
 
-    let tsmaller = min(t0s, t1s);
-    let tbigger = max(t0s, t1s);
+    let tmin = max(max(min(t0s.x, t1s.x), min(t0s.y, t1s.y)), min(t0s.z, t1s.z));
+    let tmax = min(min(max(t0s.x, t1s.x), max(t0s.y, t1s.y)), max(t0s.z, t1s.z));
 
-    let tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
-    let tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
-
-    return tmin <= tmax && tmax > 0.0;
+    return tmax >= max(tmin, 0.0);
 }

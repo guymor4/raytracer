@@ -10,6 +10,7 @@ export class BVH {
               totalTriangles: number;
               totalNodes: number;
               maxDepth: number;
+              maxTrianglesPerLeaf: number;
           }
         | undefined;
     private wireframeVerticesCount: number = 0;
@@ -298,13 +299,15 @@ export class BVH {
     // Generate wireframe vertices for all leaf bounding box edges
     public buildWireframeVertices(depthFilter: number = -1): Float32Array {
         if (!this.root) return new Float32Array(0);
+        if (!this.stats || this.stats.maxDepth === 0) throw new Error('BVH stats not available');
 
         const allVertices: { position: Vec3; color: Vec3 }[] = [];
 
         // Traverse BVH and add bounding boxes of leaf nodes
         const nodesToVisit: BVHNode[] = [this.root];
-
+        let nodeIndex = 0;
         while (nodesToVisit.length > 0) {
+            nodeIndex++;
             const currentNode = nodesToVisit.pop()!;
 
             const vertices = this.generateBoundingBoxVertices(
@@ -312,24 +315,11 @@ export class BVH {
             );
             if (depthFilter < 0 || currentNode.depth === depthFilter) {
                 for (const vertex of vertices) {
-                    // Color gradient based on depth: from dark red to bright yellow to green
-                    const depthFactor = Math.min(
-                        currentNode.depth /
-                            (this.stats?.maxDepth ? this.stats.maxDepth : 10),
-                        1
-                    );
-                    const color: Vec3 =
-                        depthFactor < 0.5
-                            ? [
-                                  1.0,
-                                  depthFactor * 2, // From 0 to 1
-                                  0.0,
-                              ] // Red to Yellow
-                            : [
-                                  1.0 - (depthFactor - 0.5) * 2, // From 1 to 0
-                                  1.0,
-                                  0.0,
-                              ]; // Yellow to Green
+                    // Color gradient based on depth and index
+                    const depthFactor = currentNode.depth / this.stats.maxDepth;
+                    const indexFactor = nodeIndex / this.stats.totalNodes;
+
+                    const color: Vec3 = [depthFactor, indexFactor, 0]
 
                     // Color based on depth (deeper nodes are darker)
                     allVertices.push({
@@ -427,12 +417,14 @@ export class BVH {
         totalTriangles: number;
         totalNodes: number;
         maxDepth: number;
+        maxTrianglesPerLeaf: number;
     } {
         const nodeStats = {
             totalNodes: 1,
             leafNodes: node.isLeaf ? 1 : 0,
             totalTriangles: node.isLeaf ? node.triangleIndices.length : 0,
             maxDepth: depth,
+            maxTrianglesPerLeaf: node.isLeaf ? node.triangleIndices.length : 0,
         };
 
         if (node.leftChild) {
@@ -444,6 +436,10 @@ export class BVH {
                 nodeStats.maxDepth,
                 childStats.maxDepth
             );
+            nodeStats.maxTrianglesPerLeaf = Math.max(
+                nodeStats.maxTrianglesPerLeaf,
+                childStats.maxTrianglesPerLeaf
+            );
         }
         if (node.rightChild) {
             const childStats = this.collectBVHStats(node.rightChild, depth + 1);
@@ -453,6 +449,10 @@ export class BVH {
             nodeStats.maxDepth = Math.max(
                 nodeStats.maxDepth,
                 childStats.maxDepth
+            );
+            nodeStats.maxTrianglesPerLeaf = Math.max(
+                nodeStats.maxTrianglesPerLeaf,
+                childStats.maxTrianglesPerLeaf
             );
         }
 

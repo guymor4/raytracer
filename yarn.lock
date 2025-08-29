@@ -2568,8 +2568,16 @@ __metadata:
     typescript: "npm:5.2.2"
     typescript-eslint: "npm:^8.40.0"
     vite: "npm:^5.0.0"
+    wgpu-matrix: "npm:^3.4.0"
   languageName: unknown
   linkType: soft
+
+"wgpu-matrix@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "wgpu-matrix@npm:3.4.0"
+  checksum: 324a65a50eabb2d9a407b6446a2d3f2b189bad6fe52eac0073c3cf98868d0fe47ab333971939778cb524a225fd9cbcddb6abbefbbc1337c02e4546fc48856535
+  languageName: node
+  linkType: hard
 
 "which@npm:^2.0.1":
   version: 2.0.2

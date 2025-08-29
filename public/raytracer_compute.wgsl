@@ -15,11 +15,12 @@ struct BVHNode {
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<storage, read> triangles: array<Triangle>;
 @group(0) @binding(3) var intermediate_texture: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var<storage, read_write> performance_counters: array<atomic<u32>>;
+@group(0) @binding(4) var<storage, read_write> performance_counters: array<atomic<u32>>; // [0]: triangle tests, [1]: AABB tests, [2]: AABB hits, [3]: Rays
 @group(0) @binding(5) var<storage, read> bvh_nodes: array<BVHNode>;
 @group(0) @binding(6) var<storage, read> bvh_triangle_indices: array<u32>;
 
 // BVH traversal for triangle intersections
+// Also counts AABB tests and triangle intersection tests in performance counters
 fn ray_bvh_triangles(ray: Ray) -> HitInfo {
     var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
 
@@ -27,27 +28,24 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
         return closest_hit;
     }
 
-    // Stack for BVH traversal (max depth typical ~20-30)
-    var stack: array<u32, 64>;
+    // Stack for BVH traversal
+    const stack_size = 64u;
+    var stack: array<u32, stack_size>;
     var stack_ptr = 0u;
-    var stack_size = 64u;
     stack[0] = 0u; // Start with root node
     stack_ptr = 1u;
 
     while (stack_ptr > 0u) {
         stack_ptr--;
         let node_index = stack[stack_ptr];
-        if (node_index >= arrayLength(&bvh_nodes)) {
-            continue;
-        }
-
         let node = bvh_nodes[node_index];
 
         // Test ray against the bounding box
-        atomicAdd(&performance_counters[1], 1); // Count AABB tests
+        atomicAdd(&performance_counters[1], 1u); // Count AABB tests
         if (!ray_aabb_intersect(ray, node.min_bounds, node.max_bounds)) {
             continue;
         }
+        atomicAdd(&performance_counters[2], 1u); // Count AABB hits
 
         if (node.is_leaf > 0.5) {
             // Leaf node - test triangles
@@ -70,12 +68,12 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
             let left_child = u32(node.left_or_triangle_start);
             let right_child = u32(node.right_or_triangle_count);
 
-            // Add right child first (processed later)
+            // Add right child first (processed later) - with bounds checking
             if (stack_ptr < stack_size - 1) {
                 stack[stack_ptr] = right_child;
                 stack_ptr++;
             }
-            // Add left child second (processed first)
+            // Add left child second (processed first) - with bounds checking
             if (stack_ptr < stack_size - 1) {
                 stack[stack_ptr] = left_child;
                 stack_ptr++;
@@ -87,21 +85,22 @@ fn ray_bvh_triangles(ray: Ray) -> HitInfo {
 }
 
 fn ray_all(ray: Ray) -> HitInfo {
-   var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
+    atomicAdd(&performance_counters[3], 1u); // Count Ray casts
+    var closest_hit = HitInfo(-1.0, vec3<f32>(), vec3<f32>(), vec3<f32>(), 0, 0);
 
-   // Check sphere intersections
-   for (var i = 0u; i < arrayLength(&spheres); i++) {
+    // Check sphere intersections
+    for (var i = 0u; i < arrayLength(&spheres); i++) {
        let hit_info = ray_sphere_intersect(ray, spheres[i]);
        if (hit_info.t > 0.0 && (closest_hit.t < 0 || hit_info.t < closest_hit.t)) {
            closest_hit = hit_info;
        }
-   }
+    }
 
-   //Check triangle intersections using BVH
-   let triangle_hit = ray_bvh_triangles(ray);
-   if (triangle_hit.t > 0.0 && (closest_hit.t < 0 || triangle_hit.t < closest_hit.t)) {
+    //Check triangle intersections using BVH
+    let triangle_hit = ray_bvh_triangles(ray);
+    if (triangle_hit.t > 0.0 && (closest_hit.t < 0 || triangle_hit.t < closest_hit.t)) {
        closest_hit = triangle_hit;
-   }
+    }
 
     return closest_hit;
 }
@@ -255,7 +254,8 @@ fn brdf_pdf(hit_normal: vec3<f32>, direction: vec3<f32>) -> f32 {
 }
 
 fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f32> {
-    var sky_color = vec3<f32>(1.0, 1.0, 1.0) * 0.4;
+    var sun_color = vec3<f32>(0.6, 0.8, 1.0); // Light blue sky color
+    var sun_direction = normalize(vec3<f32>(1.0, 1.0, 0.5)); // Directional light direction
     var color: vec3<f32> = vec3<f32>(1, 1, 1);
     var light: vec3<f32> = vec3<f32>(0, 0, 0);
     var is_specular_bounce = false; // Track if the last bounce was specular
@@ -264,8 +264,11 @@ fn ray_trace(ray: Ray, maxBounceCount: u32, state: ptr<function, u32>) -> vec3<f
     for (var i = 0u; i < maxBounceCount; i++) {
         var hit_info = ray_all(current_ray);
         if (hit_info.t < 0.0) {
-            // No hit, environment color and light
-            light += sky_color * color; // Sky color
+            // No hit, environment color and directional light from sun
+            var d = dot(current_ray.direction, sun_direction);
+            var t = smoothstep(0.0, 0.1, d); // Soften the edge of the sun
+            let env_color = mix(vec3<f32>(1.0, 1.0, 1.0), sun_color, t);
+            light += env_color * color;
             break;
         }
 

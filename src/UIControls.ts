@@ -42,6 +42,8 @@ export class UIControls {
         button.textContent = buttonText;
         button.onclick = onClick;
         this.rootElement.appendChild(button);
+
+        return button;
     }
 
     public addCheckbox(
