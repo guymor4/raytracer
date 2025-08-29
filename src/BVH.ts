@@ -1,4 +1,5 @@
-import { Triangle, BoundingBox, BVHNode, Vec3 } from './types.js';
+import { Triangle, BoundingBox, BVHNode } from './types.js';
+import { vec3, Vec3 } from 'wgpu-matrix';
 
 export class BVH {
     private root: BVHNode | null = null;
@@ -52,7 +53,7 @@ export class BVH {
 
     private calculateSceneBoundingBox(): BoundingBox {
         if (this.triangles.length === 0) {
-            return { min: [0, 0, 0], max: [0, 0, 0] };
+            return { min: vec3.zero(), max: vec3.create(1, 1, 1) };
         }
 
         // Initialize with first triangle's first vertex
@@ -80,18 +81,18 @@ export class BVH {
         }
 
         return {
-            min: [minX, minY, minZ],
-            max: [maxX, maxY, maxZ],
+            min: vec3.create(minX, minY, minZ),
+            max: vec3.create(maxX, maxY, maxZ),
         };
     }
 
     private calculateTriangleCentroid(triangleIndex: number): Vec3 {
         const triangle = this.triangles[triangleIndex];
-        return [
+        return vec3.create(
             (triangle.v0[0] + triangle.v1[0] + triangle.v2[0]) / 3,
             (triangle.v0[1] + triangle.v1[1] + triangle.v2[1]) / 3,
-            (triangle.v0[2] + triangle.v1[2] + triangle.v2[2]) / 3,
-        ];
+            (triangle.v0[2] + triangle.v1[2] + triangle.v2[2]) / 3
+        );
     }
 
     private calculateSurfaceArea(boundingBox: BoundingBox): number {
@@ -189,7 +190,7 @@ export class BVH {
         triangleIndices: number[]
     ): BoundingBox {
         if (triangleIndices.length === 0) {
-            return { min: [0, 0, 0], max: [0, 0, 0] };
+            return { min: vec3.zero(), max: vec3.zero() };
         }
 
         // Initialize with first triangle's first vertex
@@ -219,8 +220,8 @@ export class BVH {
         }
 
         return {
-            min: [minX, minY, minZ],
-            max: [maxX, maxY, maxZ],
+            min: vec3.create(minX, minY, minZ),
+            max: vec3.create(maxX, maxY, maxZ),
         };
     }
 
@@ -299,7 +300,8 @@ export class BVH {
     // Generate wireframe vertices for all leaf bounding box edges
     public buildWireframeVertices(depthFilter: number = -1): Float32Array {
         if (!this.root) return new Float32Array(0);
-        if (!this.stats || this.stats.maxDepth === 0) throw new Error('BVH stats not available');
+        if (!this.stats || this.stats.maxDepth === 0)
+            throw new Error('BVH stats not available');
 
         const allVertices: { position: Vec3; color: Vec3 }[] = [];
 
@@ -319,7 +321,11 @@ export class BVH {
                     const depthFactor = currentNode.depth / this.stats.maxDepth;
                     const indexFactor = nodeIndex / this.stats.totalNodes;
 
-                    const color: Vec3 = [depthFactor, indexFactor, 0]
+                    const color: Vec3 = vec3.create(
+                        depthFactor,
+                        indexFactor,
+                        0
+                    );
 
                     // Color based on depth (deeper nodes are darker)
                     allVertices.push({
@@ -357,14 +363,14 @@ export class BVH {
 
         // Create the 8 corners of the bounding box
         const corners: Vec3[] = [
-            [min[0], min[1], min[2]], // 0: min corner
-            [max[0], min[1], min[2]], // 1: +X
-            [max[0], max[1], min[2]], // 2: +X +Y
-            [min[0], max[1], min[2]], // 3: +Y
-            [min[0], min[1], max[2]], // 4: +Z
-            [max[0], min[1], max[2]], // 5: +X +Z
-            [max[0], max[1], max[2]], // 6: max corner
-            [min[0], max[1], max[2]], // 7: +Y +Z
+            vec3.create(min[0], min[1], min[2]), // 0: min corner
+            vec3.create(max[0], min[1], min[2]), // 1: +X
+            vec3.create(max[0], max[1], min[2]), // 2: +X +Y
+            vec3.create(min[0], max[1], min[2]), // 3: +Y
+            vec3.create(min[0], min[1], max[2]), // 4: +Z
+            vec3.create(max[0], min[1], max[2]), // 5: +X +Z
+            vec3.create(max[0], max[1], max[2]), // 6: max corner
+            vec3.create(min[0], max[1], max[2]), // 7: +Y +Z
         ];
 
         for (let i = 0; i < corners.length; i++) {

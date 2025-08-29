@@ -1,5 +1,5 @@
-import { RawScene, Scene, Triangle, Vec3 } from './types';
-import {mat4, vec3} from 'wgpu-matrix';
+import { RawScene, Scene, Triangle } from './types';
+import { Vec3, mat4, vec3 } from 'wgpu-matrix';
 
 export function showError(message: string): void {
     console.error('WebGPU Error:', message);
@@ -55,10 +55,14 @@ function parseOBJ(objText: string): { triangles: Triangle[] } {
         line = line.trim();
         if (line.startsWith('v ')) {
             const [, x, y, z] = line.split(/\s+/);
-            tempPositions.push([parseFloat(x), parseFloat(y), parseFloat(z)]);
+            tempPositions.push(
+                vec3.create(parseFloat(x), parseFloat(y), parseFloat(z))
+            );
         } else if (line.startsWith('vn ')) {
             const [, x, y, z] = line.split(/\s+/);
-            tempNormals.push([parseFloat(x), parseFloat(y), parseFloat(z)]);
+            tempNormals.push(
+                vec3.create(parseFloat(x), parseFloat(y), parseFloat(z))
+            );
         } else if (line.startsWith('f ')) {
             // f v1//vn1 v2//vn2 v3//vn3
             const parts = line.slice(2).trim().split(' ');
@@ -96,8 +100,8 @@ function parseOBJ(objText: string): { triangles: Triangle[] } {
                     v0: triangleVertices[0],
                     v1: triangleVertices[1],
                     v2: triangleVertices[2],
-                    color: [1, 1, 1],
-                    emissionColor: [0, 0, 0],
+                    color: vec3.create(1, 1, 1),
+                    emissionColor: vec3.create(0, 0, 0),
                     emissionStrength: 0,
                     smoothness: 0,
                     specularProbability: 0,
@@ -120,42 +124,62 @@ export async function loadScene(scenePath: string): Promise<Scene> {
     // If triangles is a string, treat it as a path to an OBJ file
     for (const model of scene.models ?? []) {
         if (!model.path) {
-            continue
+            continue;
         }
 
-        // Create matrix transformations for position, rotation, scale if needed
-        const modelPos = vec3.fromValues(model.position[0], model.position[1], model.position[2]);
-        const modelRot = vec3.mulScalar(vec3.fromValues(model.rotation[0], model.rotation[1], model.rotation[2]), Math.PI / 180); // Convert degrees to radians
-        const modelScale = vec3.fromValues(model.scale[0], model.scale[1], model.scale[2]);
+        // Create matrix transformations for position, rotation, scale
         let modelMat = mat4.identity();
-
-        modelMat = mat4.translate(modelMat, modelPos);
-        modelMat = mat4.rotateX(modelMat, modelRot[0]);
-        modelMat = mat4.rotateY(modelMat, modelRot[1]);
-        modelMat = mat4.rotateZ(modelMat, modelRot[2]);
-        modelMat = mat4.scale(modelMat, modelScale);
+        modelMat = mat4.translate(modelMat, model.position);
+        modelMat = mat4.rotateX(modelMat, (model.rotation[0] * Math.PI) / 180);
+        modelMat = mat4.rotateY(modelMat, (model.rotation[1] * Math.PI) / 180);
+        modelMat = mat4.rotateZ(modelMat, (model.rotation[2] * Math.PI) / 180);
+        modelMat = mat4.scale(modelMat, model.scale);
 
         try {
             const objData = await loadOBJ(model.path);
 
             for (const triangle of objData.triangles) {
-                const v0 = vec3.transformMat4(vec3.fromValues(triangle.v0[0], triangle.v0[1], triangle.v0[2]), modelMat)
-                const v1 = vec3.transformMat4(vec3.fromValues(triangle.v1[0], triangle.v1[1], triangle.v1[2]), modelMat)
-                const v2 = vec3.transformMat4(vec3.fromValues(triangle.v2[0], triangle.v2[1], triangle.v2[2]), modelMat)
+                const v0 = vec3.transformMat4(
+                    vec3.fromValues(
+                        triangle.v0[0],
+                        triangle.v0[1],
+                        triangle.v0[2]
+                    ),
+                    modelMat
+                );
+                const v1 = vec3.transformMat4(
+                    vec3.fromValues(
+                        triangle.v1[0],
+                        triangle.v1[1],
+                        triangle.v1[2]
+                    ),
+                    modelMat
+                );
+                const v2 = vec3.transformMat4(
+                    vec3.fromValues(
+                        triangle.v2[0],
+                        triangle.v2[1],
+                        triangle.v2[2]
+                    ),
+                    modelMat
+                );
 
                 scene.triangles.push({
-                    v0: [v0[0], v0[1], v0[2]],
-                    v1: [v1[0], v1[1], v1[2]],
-                    v2: [v2[0], v2[1], v2[2]],
+                    v0,
+                    v1,
+                    v2,
                     color: model.color,
                     emissionColor: model.emissionColor,
                     emissionStrength: model.emissionStrength,
                     smoothness: model.smoothness,
                     specularProbability: model.specularProbability,
-                })
+                });
             }
         } catch (error) {
-            throw new RethrownError(`Failed to load model: ${model.path}`, error as Error);
+            throw new RethrownError(
+                `Failed to load model: ${model.path}`,
+                error as Error
+            );
         }
     }
 

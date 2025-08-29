@@ -1,26 +1,4 @@
-export interface Vec3 {
-    0: number;
-    1: number;
-    2: number;
-}
-
-export namespace Vec3 {
-    export function add(a: Vec3, b: Vec3): Vec3 {
-        return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-    }
-
-    export function subtract(a: Vec3, b: Vec3): Vec3 {
-        return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    }
-
-    export function multiply(a: Vec3, b: Vec3): Vec3 {
-        return [a[0] * b[0], a[1] * b[1], a[2] * b[2]];
-    }
-
-    export function scale(v: Vec3, s: number): Vec3 {
-        return [v[0] * s, v[1] * s, v[2] * s];
-    }
-}
+import type { Vec3 } from 'wgpu-matrix';
 
 export interface Camera {
     position: Vec3;

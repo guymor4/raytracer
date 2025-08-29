@@ -403,7 +403,7 @@ class WebGPURenderer {
 
         // Create spheres buffer
         // Sphere struct: 64 bytes
-        const spheresSize = ((this.currentScene.spheres.length * 64) || 64); // Minimum size
+        const spheresSize = this.currentScene.spheres.length * 64 || 64; // Minimum size
         const spheresData = new Float32Array(spheresSize / 4);
         let spheresOffset = 0;
 
@@ -678,7 +678,10 @@ class WebGPURenderer {
 
         const stats = this.bvh.getBVHStats();
         if (!stats) return 'No BVH stats';
-        const meanTrianglesPerLeaf = stats.leafNodes > 0 ? (stats.totalTriangles / stats.leafNodes).toFixed(1) : '0.0';
+        const meanTrianglesPerLeaf =
+            stats.leafNodes > 0
+                ? (stats.totalTriangles / stats.leafNodes).toFixed(1)
+                : '0.0';
         return `BVH: Mean leaf triangles: ${meanTrianglesPerLeaf} | Max leaf triangles: ${stats.maxTrianglesPerLeaf} | Total nodes: ${stats.totalNodes} | Max depth: ${stats.maxDepth}`;
     }
 
@@ -694,7 +697,6 @@ class WebGPURenderer {
         ) {
             return;
         }
-
 
         const commandEncoder = this.device.createCommandEncoder();
 
@@ -794,7 +796,7 @@ class WebGPURenderer {
                 triangleTests: -1,
                 aabbTests: -1,
                 aabbHits: -1,
-                rayCasts: -1
+                rayCasts: -1,
             };
         }
 
@@ -837,7 +839,7 @@ class WebGPURenderer {
             triangleTests,
             aabbTests,
             aabbHits,
-            rayCasts
+            rayCasts,
         };
     }
 }
@@ -863,7 +865,11 @@ async function main(): Promise<void> {
     const controls = new UIControls(settingsElement);
 
     // Add input for scene selection
-    const scenes = { Spheres: 'scene_spheres.json', Boxes: 'scene_boxes.json', Suzanne: 'scene_suzanne.json' };
+    const scenes = {
+        Spheres: 'scene_spheres.json',
+        Boxes: 'scene_boxes.json',
+        Suzanne: 'scene_suzanne.json',
+    };
     const selectedOption = controls.addSelect(
         'Scene: ',
         Object.keys(scenes),
