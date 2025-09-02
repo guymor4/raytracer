@@ -98,6 +98,9 @@ class WebGPURenderer {
 
                 // Create BVH for triangles
                 console.log('Creating BVH...');
+                console.log('Triangle count:', renderer.currentScene.triangles.length);
+                console.log('First triangle:', renderer.currentScene.triangles[0]);
+                console.log('Last triangle:', renderer.currentScene.triangles[renderer.currentScene.triangles.length - 1]);
                 renderer.bvh = new BVH(renderer.currentScene.triangles);
                 console.log('BVH created successfully', renderer.bvh);
             } catch (error) {

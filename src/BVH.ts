@@ -22,6 +22,8 @@ export class BVH {
 
         if (this.root) {
             this.stats = this.collectBVHStats(this.root, 0);
+            console.log(`BVH construction complete: ${this.stats.totalNodes} nodes, ${this.stats.leafNodes} leaves, ${this.triangles.length} triangles`);
+            console.log(`Node-to-triangle ratio: ${(this.stats.totalNodes / this.triangles.length).toFixed(2)}`);
         }
     }
 
@@ -196,6 +198,7 @@ export class BVH {
         if (node.triangleIndices.length <= 1) {
             // Make it a leaf if it has 1 or fewer triangles
             node.isLeaf = true;
+            console.log(`Leaf created at depth ${node.depth} with ${node.triangleIndices.length} triangles`);
             return;
         }
 
@@ -205,6 +208,17 @@ export class BVH {
         if (!bestSplit) {
             // Fallback to leaf if no good split found
             node.isLeaf = true;
+            console.log(`Leaf created at depth ${node.depth} with ${node.triangleIndices.length} triangles (no good split found)`);
+            return;
+        }
+
+        console.log(`Splitting node at depth ${node.depth} with ${node.triangleIndices.length} triangles, SAH cost: ${bestSplit.cost.toFixed(2)}`);
+        
+        // Check cost vs no-split cost
+        const noSplitCost = node.triangleIndices.length;
+        if (bestSplit.cost >= noSplitCost) {
+            node.isLeaf = true;
+            console.log(`Leaf created at depth ${node.depth} with ${node.triangleIndices.length} triangles (SAH cost ${bestSplit.cost.toFixed(2)} >= no-split cost ${noSplitCost})`);
             return;
         }
 
@@ -223,6 +237,7 @@ export class BVH {
 
         // Ensure both sides have triangles (fallback to even split if needed)
         if (leftTriangles.length === 0 || rightTriangles.length === 0) {
+            console.log(`Degenerate split at depth ${node.depth}: left=${leftTriangles.length}, right=${rightTriangles.length}, falling back to even split`);
             const mid = Math.floor(node.triangleIndices.length / 2);
             // Sort by centroid on the split axis for better spatial locality
             node.triangleIndices.sort((a, b) => {
@@ -236,6 +251,8 @@ export class BVH {
             leftTriangles.push(...node.triangleIndices.slice(0, mid));
             rightTriangles.push(...node.triangleIndices.slice(mid));
         }
+        
+        console.log(`Split result: left=${leftTriangles.length}, right=${rightTriangles.length}`);
 
         // Create child nodes
         node.leftChild = {
