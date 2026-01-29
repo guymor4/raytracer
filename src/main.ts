@@ -1,3 +1,4 @@
+/// <reference types="@webgpu/types" />
 import { Scene } from './types.js';
 import * as Common from './common.js';
 import { RethrownError } from './common.js';
