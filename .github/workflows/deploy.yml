@@ -16,18 +16,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'yarn'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Prepare Yarn 4
-        run: corepack prepare yarn@4.0.0 --activate
+          # DO NOT use cache: 'yarn' here
+          # Yarn 4 is not compatible with the cache: 'yarn' option
 
       - name: Install dependencies
         run: yarn install
