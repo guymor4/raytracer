@@ -43,29 +43,23 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample the current frame from raytracer output
     let currentFrameColor = textureSample(raytracerOutput, textureSampler, input.uv).rgb;
-    
-    // Calculate pixel coordinates in the accumulation texture clamped to the resolution
+
     let pixelCoordRaw = vec2<i32>(i32(input.uv.x * uniforms.resolution.x), i32(input.uv.y * uniforms.resolution.y));
     let pixelCoord = clamp(pixelCoordRaw, vec2<i32>(0, 0), vec2<i32>(i32(uniforms.resolution.x - 1), i32(uniforms.resolution.y - 1)));
 
-    // Read back from accumulation textures or initialize to zero
-    var storedColor: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
-    // Skip the read on the first frame to avoid uninitialized data
+    var storedColor = vec3<f32>(0.0);
     if (uniforms.frameIndex > 0) {
-        let storedR = textureLoad(accumulationR, pixelCoord).r;
-        let storedG = textureLoad(accumulationG, pixelCoord).r;
-        let storedB = textureLoad(accumulationB, pixelCoord).r;
-        storedColor = vec3<f32>(storedR, storedG, storedB);
+        storedColor = vec3<f32>(
+            textureLoad(accumulationR, pixelCoord).r,
+            textureLoad(accumulationG, pixelCoord).r,
+            textureLoad(accumulationB, pixelCoord).r,
+        );
     }
 
-    // Calculate blend weight for progressive accumulation
     let weight = 1.0 / f32(uniforms.frameIndex + 1);
-    // Combine previous frame with current frame. Weight the contributions to result in an average over all frames.
     let accumulatedColor = saturate(storedColor * (1.0 - weight) + currentFrameColor * weight);
 
-    // Write to accumulation textures
     textureStore(accumulationR, pixelCoord, vec4<f32>(accumulatedColor.r, 0.0, 0.0, 0.0));
     textureStore(accumulationG, pixelCoord, vec4<f32>(accumulatedColor.g, 0.0, 0.0, 0.0));
     textureStore(accumulationB, pixelCoord, vec4<f32>(accumulatedColor.b, 0.0, 0.0, 0.0));

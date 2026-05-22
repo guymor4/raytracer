@@ -18,22 +18,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Enable Corepack
-        run: corepack enable
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # DO NOT use cache: 'yarn' here
-          # Yarn 4 is not compatible with the cache: 'yarn' option
+          cache: 'npm'
 
       - name: Install dependencies
-        run: yarn install
+        run: npm ci
 
       - name: Build
-        run: yarn build
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
