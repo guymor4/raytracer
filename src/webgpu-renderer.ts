@@ -1,18 +1,32 @@
+/// <reference types="@webgpu/types" />
+import tgpu from 'typegpu';
+import * as d from 'typegpu/data';
+import type { TgpuRoot, TgpuBuffer } from 'typegpu';
 import { FPSCounter } from './fps-counter';
 import { Scene } from './types';
 import * as Common from './common';
 import { RethrownError } from './common';
 import { Accumulator } from './accumulator';
+import {
+    UniformsSchema,
+    SphereSchema,
+    TriangleSchema,
+} from './gpu-schemas';
+
+function vec3(v: { 0: number; 1: number; 2: number }): [number, number, number] {
+    return [v[0], v[1], v[2]];
+}
 
 export class WebGPURenderer {
     private canvas: HTMLCanvasElement;
     private context: GPUCanvasContext | null = null;
     private device: GPUDevice | null = null;
+    private root: TgpuRoot | null = null;
     private raytracerComputePipeline: GPUComputePipeline | null = null;
     private resolution: { width: number; height: number };
-    private spheresBuffer: GPUBuffer | null = null;
-    private trianglesBuffer: GPUBuffer | null = null;
-    private uniformsBuffer: GPUBuffer | null = null;
+    private uniformsBuffer: TgpuBuffer<typeof UniformsSchema> | null = null;
+    private spheresBuffer: TgpuBuffer<d.WgslArray<typeof SphereSchema>> | null = null;
+    private trianglesBuffer: TgpuBuffer<d.WgslArray<typeof TriangleSchema>> | null = null;
     private performanceCountersBuffer: GPUBuffer | null = null;
     private raytracerComputeBindGroup: GPUBindGroup | null = null;
     private intermediateTexture: GPUTexture | null = null;
@@ -22,9 +36,9 @@ export class WebGPURenderer {
     private fpsCounter: FPSCounter;
     private currentScene: Scene | null = null;
     private samplesPerPixel = 1;
-    private debugEnabled: boolean = false;
-    private _enabled: boolean = true;
-    
+    private debugEnabled = false;
+    private _enabled = true;
+
     private constructor(canvas: HTMLCanvasElement) {
         this.resolution = { width: canvas.width, height: canvas.height };
         this.canvas = canvas;
@@ -48,52 +62,37 @@ export class WebGPURenderer {
             }
 
             renderer.device = await adapter.requestDevice();
+            renderer.root = tgpu.initFromDevice({ device: renderer.device });
+
             renderer.context = renderer.canvas.getContext('webgpu');
             if (!renderer.context) {
                 throw new Error('Failed to get WebGPU context');
             }
 
-            const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
             renderer.context.configure({
                 device: renderer.device,
-                format: canvasFormat,
+                format: navigator.gpu.getPreferredCanvasFormat(),
             });
 
-            // Create GPU textures
             renderer.createTextures();
-            if (!renderer.intermediateTexture) {
-                throw new Error('Intermediate texture not initialized');
-            }
 
-            // Create pipelines
             try {
                 renderer.raytracerComputePipeline =
                     await renderer.createComputePipeline(renderer.device);
             } catch (error) {
-                throw new RethrownError(
-                    'Failed to create pipelines',
-                    error as Error
-                );
+                throw new RethrownError('Failed to create pipelines', error as Error);
             }
 
-            // Load scene
             try {
                 renderer.currentScene = await Common.loadScene(scenePath);
             } catch (error) {
-                throw new RethrownError(
-                    `Failed to load '${scenePath}'`,
-                    error as Error
-                );
+                throw new RethrownError(`Failed to load '${scenePath}'`, error as Error);
             }
 
-            // Create scene buffers and bind groups
             try {
                 await renderer.createBuffersAndBindGroups();
             } catch (error) {
-                throw new RethrownError(
-                    'Failed to create scene buffer',
-                    error as Error
-                );
+                throw new RethrownError('Failed to create scene buffer', error as Error);
             }
         } catch (error) {
             Common.showError((error as Error).message);
@@ -106,16 +105,12 @@ export class WebGPURenderer {
     private createTextures(): void {
         if (!this.device) throw new Error('Device not initialized');
 
-        // Create intermediate texture for raytracer output
         this.intermediateTexture = this.device.createTexture({
             size: [this.resolution.width, this.resolution.height],
             format: 'rgba16float',
-            usage:
-                GPUTextureUsage.STORAGE_BINDING |
-                GPUTextureUsage.TEXTURE_BINDING,
+            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
         });
 
-        // Create sampler for intermediate texture
         this.textureSampler = this.device.createSampler({
             magFilter: 'linear',
             minFilter: 'linear',
@@ -133,10 +128,8 @@ export class WebGPURenderer {
         });
 
         const info = await shaderModule.getCompilationInfo();
-        if (info.messages.length > 0) {
-            for (const message of info.messages) {
-                console.log(`${message.type}: ${message.message} (line ${message.lineNum})`);
-            }
+        for (const message of info.messages) {
+            console.log(`${message.type}: ${message.message} (line ${message.lineNum})`);
         }
 
         return device.createComputePipeline({
@@ -146,212 +139,99 @@ export class WebGPURenderer {
     }
 
     private async createBuffersAndBindGroups(): Promise<void> {
-        if (!this.device) throw new Error('Device not initialized');
-        if (!this.raytracerComputePipeline)
-            throw new Error('Raytracer compute pipeline not initialized');
-        if (!this.currentScene)
-            throw new Error('Scene not loaded or initialized');
+        if (!this.device || !this.root) throw new Error('Device not initialized');
+        if (!this.raytracerComputePipeline) throw new Error('Compute pipeline not initialized');
+        if (!this.currentScene) throw new Error('Scene not loaded');
 
-        // Create uniforms buffer
-        this.uniformsBuffer = this.device.createBuffer({
-            size: 80,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        this.updateUniformsBuffer();
+        this.uniformsBuffer = this.root
+            .createBuffer(UniformsSchema)
+            .$usage('uniform');
+        this.writeUniforms();
 
-        // Create performance counters buffer (4 bytes per counter, start with 4 counters)
         this.performanceCountersBuffer = this.device.createBuffer({
-            size: 16, // 4 counters * 4 bytes each
-            usage:
-                GPUBufferUsage.STORAGE |
-                GPUBufferUsage.COPY_SRC |
-                GPUBufferUsage.COPY_DST,
+            size: 16,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
         });
+        this.device.queue.writeBuffer(this.performanceCountersBuffer, 0, new Uint32Array(4));
 
-        // Initialize to zero
-        this.device.queue.writeBuffer(
-            this.performanceCountersBuffer,
-            0,
-            new Uint32Array(4)
-        );
+        const scene = this.currentScene;
 
-        // Create spheres buffer
-        // Sphere struct: 64 bytes
-        const spheresSize = this.currentScene.spheres.length * 64;
-        const spheresData = new Float32Array(spheresSize / 4);
-        let spheresOffset = 0;
-
-        for (const sphere of this.currentScene.spheres) {
-            // center: vec3<f32>
-            spheresData[spheresOffset++] = sphere.center[0];
-            spheresData[spheresOffset++] = sphere.center[1];
-            spheresData[spheresOffset++] = sphere.center[2];
-            // radius: f32
-            spheresData[spheresOffset++] = sphere.radius;
-
-            // color: vec3<f32>
-            spheresData[spheresOffset++] = sphere.color[0];
-            spheresData[spheresOffset++] = sphere.color[1];
-            spheresData[spheresOffset++] = sphere.color[2];
-            // smoothness: f32
-            spheresData[spheresOffset++] = sphere.smoothness;
-
-            // emissionColor: vec3<f32>
-            spheresData[spheresOffset++] = sphere.emissionColor[0];
-            spheresData[spheresOffset++] = sphere.emissionColor[1];
-            spheresData[spheresOffset++] = sphere.emissionColor[2];
-            // emissionStrength: f32
-            spheresData[spheresOffset++] = sphere.emissionStrength;
-            // specularProbability: f32
-            spheresData[spheresOffset++] = sphere.specularProbability;
-            // padding: f32 (4 bytes)
-            spheresData[spheresOffset++] = 0.0;
-            spheresData[spheresOffset++] = 0.0;
-            spheresData[spheresOffset++] = 0.0;
+        this.spheresBuffer = this.root
+            .createBuffer(d.arrayOf(SphereSchema, scene.spheres.length))
+            .$usage('storage');
+        if (scene.spheres.length > 0) {
+            this.spheresBuffer.write(scene.spheres.map((s) => ({
+                center: vec3(s.center),
+                radius: s.radius,
+                color: vec3(s.color),
+                smoothness: s.smoothness,
+                emissionColor: vec3(s.emissionColor),
+                emissionStrength: s.emissionStrength,
+                specularProbability: s.specularProbability,
+            })));
         }
 
-        this.spheresBuffer = this.device.createBuffer({
-            size: spheresSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-
-        if (spheresSize > 0) {
-            this.device.queue.writeBuffer(this.spheresBuffer, 0, spheresData);
-        }
-
-        // Create triangles buffer
-        // Triangle struct: 96 bytes
-        const trianglesSize = this.currentScene.triangles.length * 96;
-        const trianglesData = new Float32Array(trianglesSize / 4);
-        let trianglesOffset = 0;
-
-        for (const triangle of this.currentScene.triangles) {
-            // v0: vec3<f32>
-            trianglesData[trianglesOffset++] = triangle.v0[0];
-            trianglesData[trianglesOffset++] = triangle.v0[1];
-            trianglesData[trianglesOffset++] = triangle.v0[2];
-            // padding1: f32
-            trianglesData[trianglesOffset++] = 0.0;
-
-            // v1: vec3<f32>
-            trianglesData[trianglesOffset++] = triangle.v1[0];
-            trianglesData[trianglesOffset++] = triangle.v1[1];
-            trianglesData[trianglesOffset++] = triangle.v1[2];
-            // padding2: f32
-            trianglesData[trianglesOffset++] = 0.0;
-
-            // v2: vec3<f32>
-            trianglesData[trianglesOffset++] = triangle.v2[0];
-            trianglesData[trianglesOffset++] = triangle.v2[1];
-            trianglesData[trianglesOffset++] = triangle.v2[2];
-            // padding3: f32
-            trianglesData[trianglesOffset++] = 0.0;
-
-            // color: vec3<f32>
-            trianglesData[trianglesOffset++] = triangle.color[0];
-            trianglesData[trianglesOffset++] = triangle.color[1];
-            trianglesData[trianglesOffset++] = triangle.color[2];
-            // padding4: f32
-            trianglesData[trianglesOffset++] = 0.0;
-
-            // emissionColor: vec3<f32>
-            trianglesData[trianglesOffset++] = triangle.emissionColor[0];
-            trianglesData[trianglesOffset++] = triangle.emissionColor[1];
-            trianglesData[trianglesOffset++] = triangle.emissionColor[2];
-
-            // emissionStrength: f32
-            trianglesData[trianglesOffset++] = triangle.emissionStrength;
-
-            // smoothness: f32
-            trianglesData[trianglesOffset++] = triangle.smoothness;
-            // specularProbability: f32
-            trianglesData[trianglesOffset++] = triangle.specularProbability;
-            // padding: f32
-            trianglesData[trianglesOffset++] = 0.0;
-            trianglesData[trianglesOffset++] = 0.0;
-        }
-
-        this.trianglesBuffer = this.device.createBuffer({
-            size: trianglesSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-
-        if (trianglesSize > 0) {
-            this.device.queue.writeBuffer(
-                this.trianglesBuffer,
-                0,
-                trianglesData
-            );
+        this.trianglesBuffer = this.root
+            .createBuffer(d.arrayOf(TriangleSchema, scene.triangles.length))
+            .$usage('storage');
+        if (scene.triangles.length > 0) {
+            this.trianglesBuffer.write(scene.triangles.map((t) => ({
+                v0: vec3(t.v0),
+                v1: vec3(t.v1),
+                v2: vec3(t.v2),
+                color: vec3(t.color),
+                emissionColor: vec3(t.emissionColor),
+                emissionStrength: t.emissionStrength,
+                smoothness: t.smoothness,
+                specularProbability: t.specularProbability,
+            })));
         }
 
         try {
             this.raytracerComputeBindGroup = this.device.createBindGroup({
-                layout: this.raytracerComputePipeline!.getBindGroupLayout(0),
+                layout: this.raytracerComputePipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: this.uniformsBuffer } },
-                    { binding: 1, resource: { buffer: this.spheresBuffer } },
-                    { binding: 2, resource: { buffer: this.trianglesBuffer } },
+                    { binding: 0, resource: { buffer: this.uniformsBuffer.buffer } },
+                    { binding: 1, resource: { buffer: this.spheresBuffer.buffer } },
+                    { binding: 2, resource: { buffer: this.trianglesBuffer.buffer } },
                     { binding: 3, resource: this.intermediateTexture!.createView() },
-                    { binding: 4, resource: { buffer: this.performanceCountersBuffer! } },
+                    { binding: 4, resource: { buffer: this.performanceCountersBuffer } },
                 ],
             });
 
             this.accumulator = await Accumulator.create(
                 this.device,
                 this.resolution,
-                this.uniformsBuffer,
+                this.uniformsBuffer.buffer,
                 this.intermediateTexture!,
                 this.textureSampler!
             );
         } catch (error) {
             Common.showError('Bind group creation failed: ' + (error as Error).message);
-            return;
         }
     }
 
-    // TODO update only the frameIndex (camera data is static for now)
-    private updateUniformsBuffer(): void {
-        if (!this.device || !this.uniformsBuffer || !this.currentScene) return;
-
-        // Create uniforms buffer
-        // Uniforms struct: Camera + frameIndex + resolution + samples
-        const uniformsData = new Float32Array(20);
-        let uniformsOffset = 0;
-
-        // Camera.position: vec3<f32> (12 bytes + 4 bytes padding = 16 bytes)
-        uniformsData[uniformsOffset++] = this.currentScene.camera.position[0];
-        uniformsData[uniformsOffset++] = this.currentScene.camera.position[1];
-        uniformsData[uniformsOffset++] = this.currentScene.camera.position[2];
-        uniformsOffset++; // padding after vec3
-
-        // rotation: vec3<f32>
-        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[0];
-        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[1];
-        uniformsData[uniformsOffset++] = this.currentScene.camera.rotation[2];
-
-        // Camera.fov, Camera.nearPlane, Camera.farPlane: f32 each
-        uniformsData[uniformsOffset++] = this.currentScene.camera.fov;
-        uniformsData[uniformsOffset++] = this.currentScene.camera.nearPlane;
-        uniformsData[uniformsOffset++] = this.currentScene.camera.farPlane;
-        uniformsOffset++; // padding after 3 f32
-        uniformsOffset++;
-
-        // frameIndex, resolution width, resolution height: f32
-        uniformsData[uniformsOffset++] = this.frameIndex;
-        uniformsOffset++;
-        uniformsData[uniformsOffset++] = this.resolution.width;
-        uniformsData[uniformsOffset++] = this.resolution.height;
-
-        // samples: u32 (converted to f32 for buffer)
-        uniformsData[uniformsOffset++] = this.samplesPerPixel;
-        uniformsData[uniformsOffset++] = this.debugEnabled ? 1.0 : 0.0;
-
-        this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
+    private writeUniforms(): void {
+        if (!this.uniformsBuffer || !this.currentScene) return;
+        const cam = this.currentScene.camera;
+        this.uniformsBuffer.write({
+            camera: {
+                position: vec3(cam.position),
+                rotation: vec3(cam.rotation),
+                fov: cam.fov,
+                nearPlane: cam.nearPlane,
+                farPlane: cam.farPlane,
+            },
+            frameIndex: this.frameIndex,
+            resolution: [this.resolution.width, this.resolution.height],
+            samplesPerPixel: this.samplesPerPixel,
+            debugEnabled: this.debugEnabled ? 1 : 0,
+        });
     }
 
     public setSamplesPerPixel(samples: number): void {
         this.samplesPerPixel = Math.max(1, Math.min(16, samples));
-        this.updateUniformsBuffer();
+        this.writeUniforms();
     }
 
     private render(): void {
@@ -366,7 +246,7 @@ export class WebGPURenderer {
         }
 
         this.frameIndex++;
-        this.updateUniformsBuffer();
+        this.writeUniforms();
 
         const commandEncoder = this.device.createCommandEncoder();
 
@@ -390,9 +270,7 @@ export class WebGPURenderer {
     public startRenderLoop(): void {
         const loop = (): void => {
             this.fpsCounter.updateFPS();
-            if (this._enabled) {
-                this.render();
-            }
+            if (this._enabled) this.render();
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -400,14 +278,15 @@ export class WebGPURenderer {
 
     setDebug(checked: boolean) {
         this.debugEnabled = checked;
+        this.writeUniforms();
     }
 
     resetAccumulation() {
         this.frameIndex = 0;
-        this.updateUniformsBuffer();
+        this.writeUniforms();
     }
 
-    public getFPS(): number {
+    getFPS(): number {
         return this.fpsCounter.getFPS();
     }
 
@@ -422,37 +301,21 @@ export class WebGPURenderer {
     public async getTriangleTestsSinceLastCheck(): Promise<number> {
         if (!this.device || !this.performanceCountersBuffer) return 0;
 
-        // Create a buffer for reading back the counter data
         const readBuffer = this.device.createBuffer({
             size: 16,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
 
-        // Copy counter data to read buffer
         const commandEncoder = this.device.createCommandEncoder();
-        commandEncoder.copyBufferToBuffer(
-            this.performanceCountersBuffer,
-            0,
-            readBuffer,
-            0,
-            16
-        );
+        commandEncoder.copyBufferToBuffer(this.performanceCountersBuffer, 0, readBuffer, 0, 16);
         this.device.queue.submit([commandEncoder.finish()]);
 
-        // Read the data
         await readBuffer.mapAsync(GPUMapMode.READ);
-        const data = new Uint32Array(readBuffer.getMappedRange());
-        const triangleTests = data[0]; // Counter 0 is triangle tests
+        const triangleTests = new Uint32Array(readBuffer.getMappedRange())[0];
         readBuffer.unmap();
         readBuffer.destroy();
 
-        // Reset counter for next measurement
-        const resetCounters = new Uint32Array(4);
-        this.device.queue.writeBuffer(
-            this.performanceCountersBuffer,
-            0,
-            resetCounters
-        );
+        this.device.queue.writeBuffer(this.performanceCountersBuffer, 0, new Uint32Array(4));
 
         return triangleTests;
     }
